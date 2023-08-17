@@ -21,6 +21,8 @@ const FILE_LEN: usize = DATA_LEN / ROUND;
 const ROUND: usize = 3;
 const TX_ROUND: usize = 30;
 
+const TEST_COUNT: usize = 30;
+
 #[inline]
 fn time_str(duration: &Duration) -> String {
     format!("{}.{}s", duration.as_secs(), duration.subsec_nanos())
@@ -167,50 +169,137 @@ fn test_perf(repo: &mut Repo, files: &mut Vec<File>, data: &[u8]) {
     println!();
 }
 
+fn test_perf_return(repo: &mut Repo, files: &mut Vec<File>, data: &[u8]) -> PerfResult {
+    print!("Performing testing...");
+    io::stdout().flush().unwrap();
+
+    // write
+    let now = Instant::now();
+    for i in 0..ROUND {
+        let data = &data[i * FILE_LEN..(i + 1) * FILE_LEN];
+        files[i].write_once(&data[..]).unwrap();
+    }
+    let write_time = now.elapsed();
+
+    // read
+    let mut buf = Vec::new();
+    let now = Instant::now();
+    for i in 0..ROUND {
+        files[i].seek(SeekFrom::Start(0)).unwrap();
+        let read = files[i].read_to_end(&mut buf).unwrap();
+        assert_eq!(read, FILE_LEN);
+    }
+    let read_time = now.elapsed();
+
+    // tx
+    let mut dirs = Vec::new();
+    for i in 0..TX_ROUND {
+        dirs.push(format!("/dir{}", i));
+    }
+    let now = Instant::now();
+    for i in 0..TX_ROUND {
+        repo.create_dir(&dirs[i]).unwrap();
+    }
+    let tx_time = now.elapsed();
+    repo.remove_dir_all("/").unwrap();
+
+    PerfResult { read_time, write_time, tx_time }
+}
+
+struct PerfResult {
+    read_time: Duration,
+    write_time: Duration,
+    tx_time: Duration,
+}
+
+fn get_results(times: &[PerfResult]) -> PerfResult {
+    let read_average = times.iter()
+        .map(|res| res.read_time)
+        .map(|time| time.as_secs_f64())
+        .sum::<f64>() / times.len() as f64;
+
+    let write_average = times.iter()
+        .map(|res| res.write_time)
+        .map(|time| time.as_secs_f64())
+        .sum::<f64>() / times.len() as f64;
+
+    let tx_average = times.iter()
+        .map(|res| res.tx_time)
+        .map(|time| time.as_secs_f64())
+        .sum::<f64>() / times.len() as f64;
+
+    PerfResult {
+        read_time: Duration::from_secs_f64(read_average),
+        write_time: Duration::from_secs_f64(write_average),
+        tx_time: Duration::from_secs_f64(tx_average),
+    }
+}
+
 fn test_mem_perf(data: &[u8]) {
     println!("---------------------------------------------");
     println!("Memory storage performance test (no compress)");
     println!("---------------------------------------------");
-    let mut repo = RepoOpener::new()
-        .create(true)
-        .open("mem://perf", "pwd")
-        .unwrap();
-    let mut files = make_files(&mut repo);
-    test_perf(&mut repo, &mut files, data);
+    let mut results = Vec::with_capacity(TEST_COUNT);
+    for _ in 0..TEST_COUNT {
+        let mut repo = RepoOpener::new()
+            .create(true)
+            .open("mem://perf", "pwd")
+            .unwrap();
+        let mut files = make_files(&mut repo);
+        results.push(test_perf_return(&mut repo, &mut files, data));
+    }
+    let averages = get_results(&results);
+    print_result(&averages.read_time, &averages.write_time, &averages.tx_time);
 
     println!("---------------------------------------------");
     println!("Memory storage performance test (compress)");
     println!("---------------------------------------------");
-    let mut repo = RepoOpener::new()
-        .create(true)
-        .compress(true)
-        .open("mem://perf2", "pwd")
-        .unwrap();
-    let mut files = make_files(&mut repo);
-    test_perf(&mut repo, &mut files, data);
+    let mut results = Vec::with_capacity(TEST_COUNT);
+    for _ in 0..TEST_COUNT {
+        let mut repo = RepoOpener::new()
+            .create(true)
+            .compress(true)
+            .open("mem://perf2", "pwd")
+            .unwrap();
+        let mut files = make_files(&mut repo);
+        results.push(test_perf_return(&mut repo, &mut files, data));
+    }
+    let averages = get_results(&results);
+    print_result(&averages.read_time, &averages.write_time, &averages.tx_time);
 }
 
 fn test_file_perf(data: &[u8], dir: &Path) {
     println!("---------------------------------------------");
     println!("File storage performance test (no compress)");
     println!("---------------------------------------------");
-    let mut repo = RepoOpener::new()
-        .create_new(true)
-        .open(&format!("file://{}/repo", dir.display()), "pwd")
-        .unwrap();
-    let mut files = make_files(&mut repo);
-    test_perf(&mut repo, &mut files, data);
+    let mut results = Vec::with_capacity(TEST_COUNT);
+    for _ in 0..TEST_COUNT {
+        let mut repo = RepoOpener::new()
+            .create_new(true)
+            .open(&format!("file://{}/repo", dir.display()), "pwd")
+            .unwrap();
+        let mut files = make_files(&mut repo);
+        results.push(test_perf_return(&mut repo, &mut files, data));
+    }
+    let averages = get_results(&results);
+    print_result(&averages.read_time, &averages.write_time, &averages.tx_time);
 
     println!("---------------------------------------------");
     println!("File storage performance test (compress)");
     println!("---------------------------------------------");
-    let mut repo = RepoOpener::new()
-        .create_new(true)
-        .compress(true)
-        .open(&format!("file://{}/repo2", dir.display()), "pwd")
-        .unwrap();
-    let mut files = make_files(&mut repo);
-    test_perf(&mut repo, &mut files, data);
+    let mut results = Vec::with_capacity(TEST_COUNT);
+    for _ in 0..TEST_COUNT {
+        let mut repo = RepoOpener::new()
+            .create_new(true)
+            .compress(true)
+            .open(&format!("file://{}/repo2", dir.display()), "pwd")
+            .unwrap();
+        let mut files = make_files(&mut repo);
+        test_perf(&mut repo, &mut files, data);
+        results.push(test_perf_return(&mut repo, &mut files, data));
+    }
+    let averages = get_results(&results);
+    print_result(&averages.read_time, &averages.write_time, &averages.tx_time);
 }
 
 #[test]
