@@ -57,36 +57,19 @@ fn print_result(
 }
 
 fn make_test_data() -> Vec<u8> {
-    print!(
-        "\nMaking {} MB pseudo random test data...",
-        DATA_LEN / 1024 / 1024
-    );
+    // print!(
+    //     "\nMaking {} MB pseudo random test data...",
+    //     DATA_LEN / 1024 / 1024
+    // );
     io::stdout().flush().unwrap();
     let mut buf = vec![0u8; DATA_LEN];
     let mut rng = XorShiftRng::from_seed([42u8; 16]);
     rng.fill_bytes(&mut buf);
-    println!("done\n");
+    //println!("done\n");
     buf
 }
 
-#[derive(Copy, Clone)]
-struct OnePerfResult {
-    read_time: Duration,
-    write_time: Duration,
-    tx_time: Duration,
-}
-
-#[derive(Copy, Clone)]
-struct PerfResult{
-    no_compress: OnePerfResult,
-    compress: OnePerfResult,
-}
-
-fn test_baseline(data: &Vec<u8>, dir: &Path) {
-    println!("---------------------------------------------");
-    println!("Baseline test");
-    println!("---------------------------------------------");
-
+fn test_baseline(data: &Vec<u8>, dir: &Path) -> BaselineResult {
     let mut buf = vec![0u8; FILE_LEN];
     let tx_time = Duration::default();
 
@@ -102,8 +85,10 @@ fn test_baseline(data: &Vec<u8>, dir: &Path) {
         }
     }
     let memcpy_time = now.elapsed();
-    print!("memcpy: ");
-    print_result(&memcpy_time, &memcpy_time, &tx_time);
+    let memcpy = OnePerfResult {
+        read_time: memcpy_time,
+        write_time: memcpy_time,
+        tx_time };
 
     // test os file system speed
     let now = Instant::now();
@@ -123,10 +108,9 @@ fn test_baseline(data: &Vec<u8>, dir: &Path) {
         file.read_to_end(&mut buf).unwrap();
     }
     let read_time = now.elapsed();
+    let file_system = OnePerfResult{read_time, write_time, tx_time};
 
-    print!("file system: ");
-    print_result(&read_time, &write_time, &tx_time);
-    println!();
+    BaselineResult {memcpy, file_system}
 }
 
 fn make_files(repo: &mut Repo) -> Vec<File> {
@@ -140,6 +124,25 @@ fn make_files(repo: &mut Repo) -> Vec<File> {
         files.push(file);
     }
     files
+}
+
+#[derive(Copy, Clone)]
+struct OnePerfResult {
+    read_time: Duration,
+    write_time: Duration,
+    tx_time: Duration,
+}
+
+#[derive(Copy, Clone)]
+struct PerfResult{
+    no_compress: OnePerfResult,
+    compress: OnePerfResult,
+}
+
+#[derive(Copy, Clone)]
+struct BaselineResult{
+    memcpy: OnePerfResult,
+    file_system: OnePerfResult,
 }
 
 fn test_perf(repo: &mut Repo, files: &mut Vec<File>, data: &[u8]) -> OnePerfResult {
@@ -177,7 +180,6 @@ fn test_perf(repo: &mut Repo, files: &mut Vec<File>, data: &[u8]) -> OnePerfResu
         repo.remove_dir(&dirs[i]).unwrap();
     }
 
-    println!("done");
     OnePerfResult {read_time, write_time, tx_time }
 }
 
@@ -225,6 +227,7 @@ fn my_perf_test() {
 
     const TEST_COUNT: usize = 30;
 
+    let mut base_results = Vec::with_capacity(TEST_COUNT);
     let mut mem_results = Vec::with_capacity(TEST_COUNT);
     let mut file_results = Vec::with_capacity(TEST_COUNT);
     for test_num in 0..TEST_COUNT {
@@ -236,13 +239,17 @@ fn my_perf_test() {
         fs::create_dir(&dir).unwrap();
 
         let data = make_test_data();
-        test_baseline(&data, &dir);
+        base_results.push(test_baseline(&data, &dir));
         mem_results.push(test_mem_perf(&data));
         file_results.push(test_file_perf(&data, &dir));
         fs::remove_dir_all(&dir).unwrap();
     }
 
-    println!("IT IS COMING!!!!!!!!!!");
+    println!("---------------------------------------------");
+    println!("Baseline performance test");
+    println!("---------------------------------------------");
+    handle_base_results(&base_results);
+
     println!("---------------------------------------------");
     println!("Memory storage performance test");
     println!("---------------------------------------------");
@@ -254,6 +261,21 @@ fn my_perf_test() {
     handle_results(&file_results);
 }
 
+fn handle_base_results(results: &[BaselineResult]) {
+    println!("memcpy");
+    println!("---------------------------------------------");
+    let no_compress = results.iter().map(|res| res.memcpy).collect::<Vec<OnePerfResult>>();
+    let no_compress_average = get_average_results(&no_compress);
+    print_result(&no_compress_average.read_time, &no_compress_average.write_time, &no_compress_average.tx_time);
+
+    println!("---------------------------------------------");
+    println!("file system");
+    println!("---------------------------------------------");
+    let compress = results.iter().map(|res| res.file_system).collect::<Vec<OnePerfResult>>();
+    let compress_average = get_average_results(&compress);
+    print_result(&compress_average.read_time, &compress_average.write_time, &compress_average.tx_time);
+}
+
 fn handle_results(results: &[PerfResult]) {
     println!("No compress");
     println!("---------------------------------------------");
@@ -261,6 +283,7 @@ fn handle_results(results: &[PerfResult]) {
     let no_compress_average = get_average_results(&no_compress);
     print_result(&no_compress_average.read_time, &no_compress_average.write_time, &no_compress_average.tx_time);
 
+    println!("---------------------------------------------");
     println!("Compress");
     println!("---------------------------------------------");
     let compress = results.iter().map(|res| res.compress).collect::<Vec<OnePerfResult>>();
