@@ -357,7 +357,7 @@ mod tests {
         println!("Chunker perf: {}", speed_str(&time, DATA_LEN));
     }
 
-    #[test]
+    //#[test]
     fn file_dedup_ratio() {
         let path = Path::new("C:/Users/ОЛЕГ/Downloads/JetBrains.Rider-2023.1.3.exe");
         chunker_draw_sizes(path.to_str().unwrap());

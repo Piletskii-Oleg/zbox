@@ -69,6 +69,19 @@ fn make_test_data() -> Vec<u8> {
     buf
 }
 
+#[derive(Copy, Clone)]
+struct OnePerfResult {
+    read_time: Duration,
+    write_time: Duration,
+    tx_time: Duration,
+}
+
+#[derive(Copy, Clone)]
+struct PerfResult{
+    no_compress: OnePerfResult,
+    compress: OnePerfResult,
+}
+
 fn test_baseline(data: &Vec<u8>, dir: &Path) {
     println!("---------------------------------------------");
     println!("Baseline test");
@@ -129,8 +142,7 @@ fn make_files(repo: &mut Repo) -> Vec<File> {
     files
 }
 
-fn test_perf(repo: &mut Repo, files: &mut Vec<File>, data: &[u8]) {
-    print!("Performing testing...");
+fn test_perf(repo: &mut Repo, files: &mut Vec<File>, data: &[u8]) -> OnePerfResult {
     io::stdout().flush().unwrap();
 
     // write
@@ -161,73 +173,120 @@ fn test_perf(repo: &mut Repo, files: &mut Vec<File>, data: &[u8]) {
         repo.create_dir(&dirs[i]).unwrap();
     }
     let tx_time = now.elapsed();
+    for i in 0..TX_ROUND {
+        repo.remove_dir(&dirs[i]).unwrap();
+    }
 
     println!("done");
-    print_result(&read_time, &write_time, &tx_time);
-    println!();
+    OnePerfResult {read_time, write_time, tx_time }
 }
 
-fn test_mem_perf(data: &[u8]) {
-    println!("---------------------------------------------");
-    println!("Memory storage performance test (no compress)");
-    println!("---------------------------------------------");
+fn test_mem_perf(data: &[u8]) -> PerfResult {
     let mut repo = RepoOpener::new()
         .create(true)
         .open("mem://perf", "pwd")
         .unwrap();
     let mut files = make_files(&mut repo);
-    test_perf(&mut repo, &mut files, data);
+    let no_compress = test_perf(&mut repo, &mut files, data);
 
-    println!("---------------------------------------------");
-    println!("Memory storage performance test (compress)");
-    println!("---------------------------------------------");
     let mut repo = RepoOpener::new()
         .create(true)
         .compress(true)
         .open("mem://perf2", "pwd")
         .unwrap();
     let mut files = make_files(&mut repo);
-    test_perf(&mut repo, &mut files, data);
+    let compress = test_perf(&mut repo, &mut files, data);
+
+    PerfResult {no_compress, compress}
 }
 
-fn test_file_perf(data: &[u8], dir: &Path) {
-    println!("---------------------------------------------");
-    println!("File storage performance test (no compress)");
-    println!("---------------------------------------------");
+fn test_file_perf(data: &[u8], dir: &Path) -> PerfResult {
     let mut repo = RepoOpener::new()
         .create_new(true)
         .open(&format!("file://{}/repo", dir.display()), "pwd")
         .unwrap();
     let mut files = make_files(&mut repo);
-    test_perf(&mut repo, &mut files, data);
+    let no_compress = test_perf(&mut repo, &mut files, data);
 
-    println!("---------------------------------------------");
-    println!("File storage performance test (compress)");
-    println!("---------------------------------------------");
     let mut repo = RepoOpener::new()
         .create_new(true)
         .compress(true)
         .open(&format!("file://{}/repo2", dir.display()), "pwd")
         .unwrap();
     let mut files = make_files(&mut repo);
-    test_perf(&mut repo, &mut files, data);
+    let compress = test_perf(&mut repo, &mut files, data);
+
+    PerfResult {no_compress, compress}
 }
 
 #[test]
-fn perf_test() {
+fn my_perf_test() {
     init_env();
 
-    let mut dir = env::temp_dir();
-    dir.push("zbox_perf_test");
-    if dir.exists() {
+    const TEST_COUNT: usize = 30;
+
+    let mut mem_results = Vec::with_capacity(TEST_COUNT);
+    let mut file_results = Vec::with_capacity(TEST_COUNT);
+    for test_num in 0..TEST_COUNT {
+        let mut dir = env::temp_dir();
+        dir.push(format!("zbox_perf_test_{test_num}"));
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
+        fs::create_dir(&dir).unwrap();
+
+        let data = make_test_data();
+        test_baseline(&data, &dir);
+        mem_results.push(test_mem_perf(&data));
+        file_results.push(test_file_perf(&data, &dir));
         fs::remove_dir_all(&dir).unwrap();
     }
-    fs::create_dir(&dir).unwrap();
 
-    let data = make_test_data();
-    test_baseline(&data, &dir);
-    test_mem_perf(&data);
-    test_file_perf(&data, &dir);
+    println!("IT IS COMING!!!!!!!!!!");
+    println!("---------------------------------------------");
+    println!("Memory storage performance test");
+    println!("---------------------------------------------");
+    handle_results(&mem_results);
 
-    fs::remove_dir_all(&dir).unwrap();
+    println!("---------------------------------------------");
+    println!("File storage performance test");
+    println!("---------------------------------------------");
+    handle_results(&file_results);
+}
+
+fn handle_results(results: &[PerfResult]) {
+    println!("No compress");
+    println!("---------------------------------------------");
+    let no_compress = results.iter().map(|res| res.no_compress).collect::<Vec<OnePerfResult>>();
+    let no_compress_average = get_average_results(&no_compress);
+    print_result(&no_compress_average.read_time, &no_compress_average.write_time, &no_compress_average.tx_time);
+
+    println!("Compress");
+    println!("---------------------------------------------");
+    let compress = results.iter().map(|res| res.compress).collect::<Vec<OnePerfResult>>();
+    let compress_average = get_average_results(&compress);
+    print_result(&compress_average.read_time, &compress_average.write_time, &compress_average.tx_time);
+}
+
+fn get_average_results(times: &[OnePerfResult]) -> OnePerfResult {
+    let read_average = times.iter()
+        .map(|res| res.read_time)
+        .map(|time| time.as_secs_f64())
+        .sum::<f64>() / times.len() as f64;
+
+    let write_average = times.iter()
+        .map(|res| res.write_time)
+        .map(|time| time.as_secs_f64())
+        .sum::<f64>() / times.len() as f64;
+
+    let tx_average = times.iter()
+        .map(|res| res.tx_time)
+        .map(|time| time.as_secs_f64())
+        .sum::<f64>() / times.len() as f64;
+
+    OnePerfResult {
+        read_time: Duration::from_secs_f64(read_average),
+        write_time: Duration::from_secs_f64(write_average),
+        tx_time: Duration::from_secs_f64(tx_average),
+    }
 }
