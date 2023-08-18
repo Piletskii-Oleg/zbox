@@ -221,11 +221,14 @@ fn test_file_perf(data: &[u8], dir: &Path) -> PerfResult {
     PerfResult {no_compress, compress}
 }
 
-#[test]
-fn my_perf_test() {
-    init_env();
+const TEST_COUNT: usize = 30;
 
-    const TEST_COUNT: usize = 30;
+const UBUNTU_SIZE: usize = 4_927_586_304;
+
+#[test]
+fn perf_test_random() {
+    println!("Random data.");
+    init_env();
 
     let mut base_results = Vec::with_capacity(TEST_COUNT);
     let mut mem_results = Vec::with_capacity(TEST_COUNT);
@@ -261,19 +264,69 @@ fn my_perf_test() {
     handle_results(&file_results);
 }
 
+//#[test]
+fn perf_test_ubuntu() {
+    println!("Ubuntu .iso");
+    init_env();
+
+    const UBUNTU_PATH: &str = "C:/stuff/ubuntu-22.04.2-desktop-amd64.iso";
+
+    let mut base_results = Vec::with_capacity(TEST_COUNT);
+    let mut mem_results = Vec::with_capacity(TEST_COUNT);
+    let mut file_results = Vec::with_capacity(TEST_COUNT);
+    for test_num in 0..TEST_COUNT {
+        let mut dir = env::temp_dir();
+        dir.push(format!("zbox_perf_test_{test_num}"));
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
+        fs::create_dir(&dir).unwrap();
+
+        let data = fs::read(UBUNTU_PATH).unwrap();
+        base_results.push(test_baseline(&data, &dir));
+        mem_results.push(test_mem_perf(&data));
+        file_results.push(test_file_perf(&data, &dir));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    println!("---------------------------------------------");
+    println!("Baseline performance test");
+    println!("---------------------------------------------");
+    handle_base_results(&base_results);
+
+    println!("---------------------------------------------");
+    println!("Memory storage performance test");
+    println!("---------------------------------------------");
+    handle_results(&mem_results);
+
+    println!("---------------------------------------------");
+    println!("File storage performance test");
+    println!("---------------------------------------------");
+    handle_results(&file_results);
+}
+fn print_perf_result(result: &OnePerfResult) {
+    print_result(&result.read_time, &result.write_time, &result.tx_time);
+}
+
 fn handle_base_results(results: &[BaselineResult]) {
     println!("memcpy");
     println!("---------------------------------------------");
-    let no_compress = results.iter().map(|res| res.memcpy).collect::<Vec<OnePerfResult>>();
-    let no_compress_average = get_average_results(&no_compress);
-    print_result(&no_compress_average.read_time, &no_compress_average.write_time, &no_compress_average.tx_time);
+    let memcpy = results.iter().map(|res| res.memcpy).collect::<Vec<OnePerfResult>>();
+    let memcpy_average = get_average_results(&memcpy);
+    print_perf_result(&memcpy_average);
+    println!("Deviation");
+    let memcpy_deviation = get_standard_deviation(&memcpy, memcpy_average);
+    print_perf_result(&memcpy_deviation);
 
     println!("---------------------------------------------");
     println!("file system");
     println!("---------------------------------------------");
-    let compress = results.iter().map(|res| res.file_system).collect::<Vec<OnePerfResult>>();
-    let compress_average = get_average_results(&compress);
-    print_result(&compress_average.read_time, &compress_average.write_time, &compress_average.tx_time);
+    let file_system = results.iter().map(|res| res.file_system).collect::<Vec<OnePerfResult>>();
+    let file_system_average = get_average_results(&file_system);
+    print_perf_result(&file_system_average);
+    println!("Deviation");
+    let file_system_deviation = get_standard_deviation(&file_system, file_system_average);
+    print_perf_result(&file_system_deviation);
 }
 
 fn handle_results(results: &[PerfResult]) {
@@ -281,14 +334,20 @@ fn handle_results(results: &[PerfResult]) {
     println!("---------------------------------------------");
     let no_compress = results.iter().map(|res| res.no_compress).collect::<Vec<OnePerfResult>>();
     let no_compress_average = get_average_results(&no_compress);
-    print_result(&no_compress_average.read_time, &no_compress_average.write_time, &no_compress_average.tx_time);
+    print_perf_result(&no_compress_average);
+    println!("Deviation");
+    let no_compress_deviation = get_standard_deviation(&no_compress, no_compress_average);
+    print_perf_result(&no_compress_deviation);
 
     println!("---------------------------------------------");
     println!("Compress");
     println!("---------------------------------------------");
     let compress = results.iter().map(|res| res.compress).collect::<Vec<OnePerfResult>>();
     let compress_average = get_average_results(&compress);
-    print_result(&compress_average.read_time, &compress_average.write_time, &compress_average.tx_time);
+    print_perf_result(&compress_average);
+    println!("Deviation");
+    let compress_deviation = get_standard_deviation(&compress, compress_average);
+    print_perf_result(&compress_deviation);
 }
 
 fn get_average_results(times: &[OnePerfResult]) -> OnePerfResult {
@@ -311,5 +370,35 @@ fn get_average_results(times: &[OnePerfResult]) -> OnePerfResult {
         read_time: Duration::from_secs_f64(read_average),
         write_time: Duration::from_secs_f64(write_average),
         tx_time: Duration::from_secs_f64(tx_average),
+    }
+}
+
+fn duration_sub_abs(first: Duration, second: Duration) -> Duration {
+    match first.checked_sub(second) {
+        None => second - first,
+        Some(sub) => sub,
+    }
+}
+
+fn get_standard_deviation(times: &[OnePerfResult], average: OnePerfResult) -> OnePerfResult {
+    let read_dispersion = times.iter()
+        .map(|res| res.read_time)
+        .map(|time| duration_sub_abs(time, average.read_time).as_secs_f64().powf(2.0))
+        .sum::<f64>() / (times.len() - 1) as f64;
+
+    let write_dispersion = times.iter()
+        .map(|res| res.write_time)
+        .map(|time| duration_sub_abs(time, average.write_time).as_secs_f64().powf(2.0))
+        .sum::<f64>() / (times.len() - 1) as f64;
+
+    let tx_dispersion = times.iter()
+        .map(|res| res.tx_time)
+        .map(|time| duration_sub_abs(time, average.tx_time).as_secs_f64().powf(2.0))
+        .sum::<f64>() / (times.len() - 1) as f64;
+
+    OnePerfResult {
+        read_time: Duration::from_secs_f64(read_dispersion.sqrt()),
+        write_time: Duration::from_secs_f64(write_dispersion.sqrt()),
+        tx_time: Duration::from_secs_f64(tx_dispersion.sqrt()),
     }
 }
