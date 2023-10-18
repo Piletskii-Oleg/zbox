@@ -145,6 +145,25 @@ impl ChunkerBuf {
             buf,
         }
     }
+
+    fn reset_position(&mut self) {
+        let left_len = self.clen - self.pos;
+        let copy_range = self.pos..self.clen;
+
+        self.buf.copy_within(copy_range, 0);
+        self.clen = left_len;
+        self.pos = 0;
+    }
+
+    fn copy_into(&mut self, buf: &[u8], in_len: usize) {
+        let copy_range = self.clen..self.clen + in_len;
+        self.buf[copy_range].copy_from_slice(&buf[..in_len]);
+        self.clen += in_len;
+    }
+
+    fn has_enough_space(&self) -> bool {
+        self.pos < self.clen
+    }
 }
 
 /// Chunker
@@ -187,12 +206,9 @@ impl<W: Write + Seek> Write for Chunker<W> {
         // copy source data into chunker buffer
         let in_len = min(WTR_BUF_LEN - self.buf.clen, buf.len());
         assert!(in_len > 0);
+        self.buf.copy_into(buf, in_len);
 
-        let copy_range = self.buf.clen..self.buf.clen + in_len;
-        self.buf[copy_range].copy_from_slice(&buf[..in_len]);
-        self.buf.clen += in_len;
-
-        while self.buf.pos < self.buf.clen {
+        while self.buf.has_enough_space() {
             // get current byte and pushed out byte
             let ch = self.buf[self.buf.pos];
             let out = self.win[self.win_idx] as usize;
@@ -224,12 +240,7 @@ impl<W: Write + Seek> Write for Chunker<W> {
                     // not enough space in buffer, copy remaining to
                     // the head of buffer and reset buf position
                     if self.buf.pos + MAX_SIZE >= WTR_BUF_LEN {
-                        let left_len = self.buf.clen - self.buf.pos;
-                        let copy_range = self.buf.pos..self.buf.clen;
-
-                        self.buf.copy_within(copy_range, 0);
-                        self.buf.clen = left_len;
-                        self.buf.pos = 0;
+                        self.buf.reset_position();
                     }
 
                     // jump to next start sliding position
@@ -253,8 +264,8 @@ impl<W: Write + Seek> Write for Chunker<W> {
 
         // reset chunker
         self.buf.pos = WIN_SLIDE_POS;
-        self.chunk_len = WIN_SLIDE_POS;
         self.buf.clen = 0;
+        self.chunk_len = WIN_SLIDE_POS;
         self.win_idx = 0;
         self.roll_hash = 0;
         self.win = [0u8; WIN_SIZE];
