@@ -73,7 +73,7 @@ impl RandomSeed {
     pub fn from(seed: &[u8]) -> Self {
         assert_eq!(seed.len(), RANDOM_SEED_SIZE);
         let mut ret = RandomSeed([0u8; RANDOM_SEED_SIZE]);
-        &ret.0[..].copy_from_slice(seed);
+        ret.0[..].copy_from_slice(seed);
         ret
     }
 
