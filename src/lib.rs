@@ -111,7 +111,7 @@ macro_rules! from_io_err {
             } else {
                 Error::from(err)
             }
-        });
+        })
     };
 }
 

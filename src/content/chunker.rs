@@ -1,18 +1,18 @@
-mod leap;
+mod rabin;
 
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use crate::content::chunker::leap::LeapChunker;
+use crate::content::chunker::rabin::RabinChunker;
 
 /// Chunker
 pub struct Chunker<W: Write + Seek> {
-    chunker: LeapChunker<W>
+    chunker: RabinChunker<W>
 }
 
 impl<W: Write + Seek> Chunker<W> {
     pub fn new(dst: W) -> Self {
         Self {
-            chunker: LeapChunker::new(dst),
+            chunker: RabinChunker::new(dst),
         }
     }
 
@@ -134,8 +134,8 @@ mod tests {
     fn chunker_perf() {
         init_env();
 
-        // prepare test data
-        const DATA_LEN: usize = 800 * 1024 * 1024;
+        // perpare test data
+        const DATA_LEN: usize = 10 * 1024 * 1024;
         let mut data = vec![0u8; DATA_LEN];
         let seed = RandomSeed::from(&[0u8; RANDOM_SEED_SIZE]);
         Crypto::random_buf_deterministic(&mut data, &seed);

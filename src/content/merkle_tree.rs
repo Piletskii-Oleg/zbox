@@ -493,7 +493,7 @@ mod tests {
         let mut mtree = build_mtree(&dst[..]);
 
         dst.resize(max(dst_len, offset + src_len), 0);
-        &dst[offset..offset + src_len].copy_from_slice(&src[..]);
+        dst[offset..offset + src_len].copy_from_slice(&src[..]);
 
         let mut rdr = Cursor::new(&dst);
         let leaves = make_leaves(offset, &src[..]);
