@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use super::chunk::ChunkMap;
-use super::chunker::{Chunker};
+use super::chunker::Chunker;
 use super::content::{
     Cache as ContentCache, ContentRef, Writer as ContentWriter,
 };

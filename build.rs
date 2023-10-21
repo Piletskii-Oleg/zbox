@@ -15,6 +15,7 @@ fn main() {}
 
 #[cfg(not(feature = "docs-rs"))]
 fn main() {
+
     #[cfg(feature = "libsodium-bundled")]
     download_and_install_libsodium();
 
@@ -201,7 +202,6 @@ fn download_and_install_libsodium() {
     use std::fs;
     use std::fs::OpenOptions;
     use std::io;
-    use std::path::PathBuf;
     #[cfg(target_env = "msvc")]
     static LIBSODIUM_ZIP: &'static str = "https://download.libsodium.org/libsodium/releases/libsodium-1.0.18-msvc.zip";
     #[cfg(target_env = "mingw")]
@@ -221,7 +221,7 @@ fn download_and_install_libsodium() {
         let mut zip = zip::ZipArchive::new(tmpfile).unwrap();
         #[cfg(target_arch = "x86_64")]
         let mut lib = zip
-            .by_name("x64/Release/v142/static/libsodium.lib")
+            .by_name("libsodium/x64/Release/v142/static/libsodium.lib")
             .unwrap();
         #[cfg(target_arch = "x86")]
         let mut lib = zip
