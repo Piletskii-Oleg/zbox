@@ -1,4 +1,5 @@
 mod rabin;
+mod leap;
 
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
