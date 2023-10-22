@@ -1,8 +1,8 @@
 use std::cmp::min;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
 use serde::{Deserialize, Serialize};
+use crate::content::chunker::buffer::{BUFFER_SIZE, ChunkerBuf};
 
 // taken from pcompress implementation
 // https://github.com/moinakg/pcompress
@@ -26,9 +26,6 @@ const WIN_MASK: usize = WIN_SIZE - 1;
 const WIN_SLIDE_OFFSET: usize = 64;
 const WIN_SLIDE_POS: usize = MIN_SIZE - WIN_SLIDE_OFFSET;
 
-// writer buffer length
-const WTR_BUF_LEN: usize = 8 * MAX_SIZE;
-
 pub(super) struct RabinChunker<W: Write + Seek> {
     pub(super) dst: W,
     buf: ChunkerBuf,
@@ -47,17 +44,11 @@ struct ChunkerParams {
     ir: Vec<u64>,      // irreducible polynomial, length is 256
 }
 
-struct ChunkerBuf {
-    pos: usize,
-    clen: usize,
-    buf: Vec<u8>, // chunker buffer, fixed size: WTR_BUF_LEN
-}
-
 impl<'a, W: Write + Seek> RabinChunker<W> {
     pub(super) fn new(dst: W) -> RabinChunker<W> {
         RabinChunker {
             dst,
-            buf: ChunkerBuf::new(),
+            buf: ChunkerBuf::new( WIN_SLIDE_POS),
             params: ChunkerParams::new(),
             chunk_len: WIN_SLIDE_POS,
             win_idx: 0,
@@ -79,11 +70,11 @@ impl<W: Write + Seek> Write for RabinChunker<W> {
         }
 
         // copy source data into chunker buffer
-        let in_len = min(WTR_BUF_LEN - self.buf.clen, buf.len());
+        let in_len = min(BUFFER_SIZE - self.buf.clen, buf.len());
         assert!(in_len > 0);
-        self.buf.copy_into(buf, in_len);
+        self.buf.copy_in(buf, in_len);
 
-        while self.buf.has_enough_space() {
+        while self.buf.has_something() {
             // get current byte and pushed out byte
             let ch = self.buf[self.buf.pos];
             let out = self.win[self.win_idx] as usize;
@@ -115,7 +106,7 @@ impl<W: Write + Seek> Write for RabinChunker<W> {
 
                     // not enough space in buffer, copy remaining to
                     // the head of buffer and reset buf position
-                    if self.buf.pos + MAX_SIZE >= WTR_BUF_LEN {
+                    if self.buf.pos + MAX_SIZE >= BUFFER_SIZE {
                         self.buf.reset_position();
                     }
 
@@ -135,7 +126,7 @@ impl<W: Write + Seek> Write for RabinChunker<W> {
         if p < self.buf.clen {
             self.chunk_len = self.buf.clen - p;
             let write_range = p..p + self.chunk_len;
-            let _ = self.dst.write(&self.buf.buf[write_range])?;
+            let _ = self.dst.write(&self.buf[write_range])?;
         }
 
         // reset chunker
@@ -185,38 +176,6 @@ impl ChunkerParams {
     }
 }
 
-impl ChunkerBuf {
-    fn new() -> Self {
-        let mut buf = vec![0u8; WTR_BUF_LEN];
-        buf.shrink_to_fit();
-
-        Self {
-            pos: WIN_SLIDE_POS,
-            clen: 0,
-            buf,
-        }
-    }
-
-    fn reset_position(&mut self) {
-        let left_len = self.clen - self.pos;
-        let copy_range = self.pos..self.clen;
-
-        self.buf.copy_within(copy_range, 0);
-        self.clen = left_len;
-        self.pos = 0;
-    }
-
-    fn copy_into(&mut self, buf: &[u8], in_len: usize) {
-        let copy_range = self.clen..self.clen + in_len;
-        self.buf[copy_range].copy_from_slice(&buf[..in_len]);
-        self.clen += in_len;
-    }
-
-    fn has_enough_space(&self) -> bool {
-        self.pos < self.clen
-    }
-}
-
 impl Debug for ChunkerParams {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ChunkerParams()")
@@ -233,47 +192,5 @@ impl Default for ChunkerParams {
         ret.out_map.shrink_to_fit();
         ret.ir.shrink_to_fit();
         ret
-    }
-}
-
-impl Index<Range<usize>> for ChunkerBuf {
-    type Output = [u8];
-
-    fn index(&self, index: Range<usize>) -> &Self::Output {
-        &self.buf[index]
-    }
-}
-
-impl Index<usize> for ChunkerBuf {
-    type Output = u8;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.buf[index]
-    }
-}
-
-impl Deref for ChunkerBuf {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        &self.buf
-    }
-}
-
-impl IndexMut<usize> for ChunkerBuf {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.buf[index]
-    }
-}
-
-impl IndexMut<Range<usize>> for ChunkerBuf {
-    fn index_mut(&mut self, index: Range<usize>) -> &mut Self::Output {
-        &mut self.buf[index]
-    }
-}
-
-impl DerefMut for ChunkerBuf {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.buf
     }
 }

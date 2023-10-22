@@ -1,19 +1,21 @@
 mod rabin;
 mod leap;
+mod ultra;
+mod buffer;
 
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use crate::content::chunker::rabin::RabinChunker;
+use crate::content::chunker::ultra::UltraChunker;
 
 /// Chunker
 pub struct Chunker<W: Write + Seek> {
-    chunker: RabinChunker<W>
+    chunker: UltraChunker<W>
 }
 
 impl<W: Write + Seek> Chunker<W> {
     pub fn new(dst: W) -> Self {
         Self {
-            chunker: RabinChunker::new(dst),
+            chunker: UltraChunker::new(dst),
         }
     }
 
