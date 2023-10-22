@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::io::{Seek, SeekFrom, Write};
 use crate::content::chunker::buffer::{BUFFER_SIZE, ChunkerBuf};
 
@@ -20,11 +20,12 @@ pub(super) struct UltraChunker<W: Write + Seek> {
     out_window: [u8; WINDOW_SIZE],
     in_window: [u8; WINDOW_SIZE],
     distance_map: Vec<Vec<usize>>,
-    normal_size: usize,
     chunk_len: usize,
     distance: usize,
     equal_window_count: usize,
-    buf: ChunkerBuf
+    buf: ChunkerBuf,
+    normal_size: usize,
+    max_size: usize,
 }
 
 fn distance_map() -> Vec<Vec<usize>> {
@@ -44,11 +45,12 @@ impl<W: Write + Seek> UltraChunker<W> {
             out_window: [0u8; WINDOW_SIZE],
             in_window: [0u8; WINDOW_SIZE],
             distance_map: distance_map(),
-            normal_size: NORMAL_CHUNK_SIZE,
             chunk_len: MIN_CHUNK_SIZE,
             distance: 0,
             equal_window_count: 0,
-            buf: ChunkerBuf::new(MIN_CHUNK_SIZE)
+            buf: ChunkerBuf::new(MIN_CHUNK_SIZE),
+            normal_size: NORMAL_CHUNK_SIZE,
+            max_size: MAX_CHUNK_SIZE
         }
     }
 
@@ -100,7 +102,7 @@ impl<W: Write + Seek> UltraChunker<W> {
             return result;
         }
 
-        if let Some(result) = self.try_get_chunk( MAX_CHUNK_SIZE, MASK_L) {
+        if let Some(result) = self.try_get_chunk( self.max_size, MASK_L) {
             return result;
         }
 
@@ -108,7 +110,11 @@ impl<W: Write + Seek> UltraChunker<W> {
     }
 
     fn try_get_chunk(&mut self, size_limit: usize, mask: usize) -> Option<std::io::Result<usize>> {
-        while self.chunk_len < size_limit && self.buf.pos < self.buf.clen { // TODO: this second check feels wrong but is necessary. rework?
+        while self.chunk_len < size_limit {
+            if self.buf.pos + 8 > self.buf.clen { // can this break?
+                return Some(self.write_to_dst());
+            }
+
             let in_range = self.buf.pos..self.buf.pos + 8;
             self.in_window
                 .copy_from_slice(&self.buf[in_range]);
@@ -153,6 +159,8 @@ impl<W: Write + Seek> Write for UltraChunker<W> {
         self.buf.copy_in(buf, in_len);
 
         while self.buf.has_something() {
+            self.normal_size = max(in_len, NORMAL_CHUNK_SIZE);
+            self.max_size = min(in_len, MAX_CHUNK_SIZE);
             self.generate_chunk()?;
         }
 
