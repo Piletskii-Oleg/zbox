@@ -13,11 +13,7 @@ impl ChunkerBuf {
         let mut buf = vec![0u8; BUFFER_SIZE];
         buf.shrink_to_fit();
 
-        Self {
-            pos,
-            clen: 0,
-            buf,
-        }
+        Self { pos, clen: 0, buf }
     }
 
     pub(super) fn reset_position(&mut self) {

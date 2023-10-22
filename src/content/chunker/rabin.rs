@@ -1,8 +1,8 @@
+use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
+use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use serde::{Deserialize, Serialize};
-use crate::content::chunker::buffer::{BUFFER_SIZE, ChunkerBuf};
 
 // taken from pcompress implementation
 // https://github.com/moinakg/pcompress
@@ -48,7 +48,7 @@ impl<'a, W: Write + Seek> RabinChunker<W> {
     pub(super) fn new(dst: W) -> RabinChunker<W> {
         RabinChunker {
             dst,
-            buf: ChunkerBuf::new( WIN_SLIDE_POS),
+            buf: ChunkerBuf::new(WIN_SLIDE_POS),
             params: ChunkerParams::new(),
             chunk_len: WIN_SLIDE_POS,
             win_idx: 0,

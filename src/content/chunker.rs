@@ -1,15 +1,15 @@
-mod rabin;
-mod leap;
-mod ultra;
 mod buffer;
+mod leap;
+mod rabin;
+mod ultra;
 
+use crate::content::chunker::ultra::UltraChunker;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use crate::content::chunker::ultra::UltraChunker;
 
 /// Chunker
 pub struct Chunker<W: Write + Seek> {
-    chunker: UltraChunker<W>
+    chunker: UltraChunker<W>,
 }
 
 impl<W: Write + Seek> Chunker<W> {
@@ -193,8 +193,8 @@ mod tests {
                 .or_insert(1);
         }
 
-        let root_area = SVGBackend::new("chart.svg", (600, 400))
-            .into_drawing_area();
+        let root_area =
+            SVGBackend::new("ultra-chart.svg", (600, 400)).into_drawing_area();
         root_area.fill(&WHITE).unwrap();
 
         let mut ctx = ChartBuilder::on(&root_area)
@@ -202,8 +202,10 @@ mod tests {
             .set_label_area_size(LabelAreaPosition::Bottom, 40)
             .caption("Chunk Size Distribution", ("sans-serif", 50))
             .build_cartesian_2d(
-                (MIN_CHUNK_SIZE..(*chunks.keys().max().unwrap() as f64 * 1.02) as usize).into_segmented(),
-                0u32..(*chunks.values().max().unwrap() as f64 * 1.02) as u32
+                (MIN_CHUNK_SIZE
+                    ..(*chunks.keys().max().unwrap() as f64 * 1.02) as usize)
+                    .into_segmented(),
+                0u32..(*chunks.values().max().unwrap() as f64 * 1.02) as u32,
             )
             .unwrap();
 
@@ -214,7 +216,7 @@ mod tests {
             let x1 = SegmentValue::Exact(size + ADJUSTMENT);
             let mut bar = Rectangle::new([(x0, count), (x1, 0)], RED.filled());
             bar
-        })
-        ).unwrap();
+        }))
+        .unwrap();
     }
 }

@@ -1,6 +1,6 @@
+use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
 use std::cmp::{max, min};
 use std::io::{Seek, SeekFrom, Write};
-use crate::content::chunker::buffer::{BUFFER_SIZE, ChunkerBuf};
 
 const KB: usize = 1024;
 const MIN_CHUNK_SIZE: usize = 2 * KB;
@@ -50,7 +50,7 @@ impl<W: Write + Seek> UltraChunker<W> {
             equal_window_count: 0,
             buf: ChunkerBuf::new(MIN_CHUNK_SIZE),
             normal_size: NORMAL_CHUNK_SIZE,
-            max_size: MAX_CHUNK_SIZE
+            max_size: MAX_CHUNK_SIZE,
         }
     }
 
@@ -76,8 +76,7 @@ impl<W: Write + Seek> UltraChunker<W> {
     }
 
     fn write_to_dst(&mut self) -> std::io::Result<usize> {
-        let write_range =
-            self.buf.pos - self.chunk_len..self.buf.pos;
+        let write_range = self.buf.pos - self.chunk_len..self.buf.pos;
         let written = self.dst.write(&self.buf[write_range])?;
         assert_eq!(written, self.chunk_len);
 
@@ -92,32 +91,35 @@ impl<W: Write + Seek> UltraChunker<W> {
 
     fn generate_chunk(&mut self) -> std::io::Result<usize> {
         let out_range = self.buf.pos..self.buf.pos + 8;
-        self.out_window
-            .copy_from_slice(&self.buf[out_range]);
+        self.out_window.copy_from_slice(&self.buf[out_range]);
         self.buf.pos += 8;
         self.chunk_len += 8;
         self.calculate_new_distance();
 
-        if let Some(result) = self.try_get_chunk( self.normal_size, MASK_S) {
+        if let Some(result) = self.try_get_chunk(self.normal_size, MASK_S) {
             return result;
         }
 
-        if let Some(result) = self.try_get_chunk( self.max_size, MASK_L) {
+        if let Some(result) = self.try_get_chunk(self.max_size, MASK_L) {
             return result;
         }
 
         self.write_to_dst()
     }
 
-    fn try_get_chunk(&mut self, size_limit: usize, mask: usize) -> Option<std::io::Result<usize>> {
+    fn try_get_chunk(
+        &mut self,
+        size_limit: usize,
+        mask: usize,
+    ) -> Option<std::io::Result<usize>> {
         while self.chunk_len < size_limit {
-            if self.buf.pos + 8 > self.buf.clen { // can this break?
+            if self.buf.pos + 8 > self.buf.clen {
+                // can this break?
                 return Some(self.write_to_dst());
             }
 
             let in_range = self.buf.pos..self.buf.pos + 8;
-            self.in_window
-                .copy_from_slice(&self.buf[in_range]);
+            self.in_window.copy_from_slice(&self.buf[in_range]);
 
             if self.in_window == self.out_window {
                 self.equal_window_count += 1;

@@ -1,10 +1,10 @@
+use rand::prelude::{Distribution, ThreadRng};
+use rand_distr::Normal;
 use std::cmp::min;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use rand::prelude::{Distribution, ThreadRng};
-use rand_distr::Normal;
 
-use crate::content::chunker::buffer::{BUFFER_SIZE, ChunkerBuf};
+use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
 
 // leap-based cdc constants
 const MIN_CHUNK_SIZE: usize = 1024 * 16;
@@ -26,10 +26,10 @@ enum PointStatus {
 
 /// Chunker
 pub struct LeapChunker<W: Write + Seek> {
-    dst: W,                // destination writer
+    dst: W, // destination writer
     chunk_len: usize,
     ef_matrix: Vec<Vec<u8>>,
-    buf: ChunkerBuf,        // chunker buffer, fixed size: BUFFER_SIZE
+    buf: ChunkerBuf, // chunker buffer, fixed size: BUFFER_SIZE
 }
 
 impl<W: Write + Seek> LeapChunker<W> {
@@ -52,7 +52,10 @@ impl<W: Write + Seek> LeapChunker<W> {
     fn is_point_satisfied(&self) -> PointStatus {
         // primary check, T<=x<M where T is WINDOW_SECONDARY_COUNT and M is WINDOW_COUNT
         for i in WINDOW_SECONDARY_COUNT..WINDOW_COUNT {
-            if !self.is_window_qualified(&self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i]) { // window is WINDOW_SIZE bytes long and moves to the left
+            if !self.is_window_qualified(
+                &self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i],
+            ) {
+                // window is WINDOW_SIZE bytes long and moves to the left
                 let leap = WINDOW_COUNT - i;
                 return PointStatus::Unsatisfied(leap);
             }
@@ -60,7 +63,9 @@ impl<W: Write + Seek> LeapChunker<W> {
 
         //secondary check, 0<=x<T bytes
         for i in 0..WINDOW_SECONDARY_COUNT {
-            if !self.is_window_qualified(&self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i]) {
+            if !self.is_window_qualified(
+                &self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i],
+            ) {
                 let leap = WINDOW_COUNT - WINDOW_SECONDARY_COUNT - i;
                 return PointStatus::Unsatisfied(leap);
             }
@@ -79,8 +84,7 @@ impl<W: Write + Seek> LeapChunker<W> {
     }
 
     fn write_to_dst(&mut self) -> IoResult<usize> {
-        let write_range =
-            self.buf.pos - self.chunk_len..self.buf.pos;
+        let write_range = self.buf.pos - self.chunk_len..self.buf.pos;
         let written = self.dst.write(&self.buf[write_range])?;
         assert_eq!(written, self.chunk_len);
 
@@ -121,7 +125,7 @@ impl<W: Write + Seek> Write for LeapChunker<W> {
                     PointStatus::Unsatisfied(leap) => {
                         self.buf.pos += leap;
                         self.chunk_len += leap;
-                    },
+                    }
                 };
             }
         }
@@ -169,20 +173,30 @@ fn generate_ef_matrix() -> Vec<Vec<u8>> {
     let e_matrix = transform_base_matrix(&base_matrix, &matrix_h);
     let f_matrix = transform_base_matrix(&base_matrix, &matrix_g);
 
-    let ef_matrix = e_matrix.iter().zip(f_matrix.iter())
+    let ef_matrix = e_matrix
+        .iter()
+        .zip(f_matrix.iter())
         .map(concatenate_bits_in_rows)
         .collect();
     ef_matrix
 }
 
-fn transform_base_matrix(base_matrix: &[Vec<u8>], additional_matrix: &[Vec<f64>]) -> Vec<Vec<bool>> {
-    base_matrix.iter()
+fn transform_base_matrix(
+    base_matrix: &[Vec<u8>],
+    additional_matrix: &[Vec<f64>],
+) -> Vec<Vec<bool>> {
+    base_matrix
+        .iter()
         .map(|row| transform_byte_row(row[0], additional_matrix))
         .collect::<Vec<Vec<bool>>>()
 }
 
-fn concatenate_bits_in_rows((row_x, row_y): (&Vec<bool>, &Vec<bool>)) -> Vec<u8> {
-    row_x.iter().zip(row_y.iter())
+fn concatenate_bits_in_rows(
+    (row_x, row_y): (&Vec<bool>, &Vec<bool>),
+) -> Vec<u8> {
+    row_x
+        .iter()
+        .zip(row_y.iter())
         .map(concatenate_bits)
         .collect()
 }
@@ -201,16 +215,29 @@ fn transform_byte_row(byte: u8, matrix: &[Vec<f64>]) -> Vec<bool> {
     (0..255)
         .map(|index| multiply_rows(byte, &matrix[index]))
         .enumerate()
-        .for_each(|(index, value)| if value > 0.0 { new_row[index / 51] += 1; });
+        .for_each(|(index, value)| {
+            if value > 0.0 {
+                new_row[index / 51] += 1;
+            }
+        });
 
-    new_row.iter()
-        .map(|&number| if number % 2 == 0 {false} else {true})
+    new_row
+        .iter()
+        .map(|&number| if number % 2 == 0 { false } else { true })
         .collect::<Vec<bool>>()
 }
 
 fn multiply_rows(byte: u8, numbers: &[f64]) -> f64 {
-    numbers.iter().enumerate()
-        .map(|(index, number)| if (byte >> index) & 1 == 1 {*number} else {-(*number)})
+    numbers
+        .iter()
+        .enumerate()
+        .map(|(index, number)| {
+            if (byte >> index) & 1 == 1 {
+                *number
+            } else {
+                -(*number)
+            }
+        })
         .sum()
 }
 
@@ -224,7 +251,5 @@ fn generate_matrix() -> Vec<Vec<f64>> {
 }
 
 fn generate_row(normal: &Normal<f64>, rng: &mut ThreadRng) -> Vec<f64> {
-    (0..MATRIX_WIDTH)
-        .map(|_| normal.sample(rng))
-        .collect()
+    (0..MATRIX_WIDTH).map(|_| normal.sample(rng)).collect()
 }
