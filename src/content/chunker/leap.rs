@@ -111,10 +111,6 @@ impl<W: Write + Seek> Write for LeapChunker<W> {
         self.buf.copy_in(buf, in_len);
 
         while self.buf.has_something() {
-            if self.buf.pos >= BUFFER_SIZE {
-                self.write_to_dst()?;
-            }
-
             if self.chunk_len >= MAX_CHUNK_SIZE {
                 self.write_to_dst()?;
             } else {

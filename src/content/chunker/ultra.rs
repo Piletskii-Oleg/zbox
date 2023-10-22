@@ -1,5 +1,5 @@
 use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
-use std::cmp::{max, min};
+use std::cmp::min;
 use std::io::{Seek, SeekFrom, Write};
 
 const KB: usize = 1024;
@@ -89,7 +89,7 @@ impl<W: Write + Seek> UltraChunker<W> {
         Ok(written)
     }
 
-    fn generate_chunk(&mut self) -> std::io::Result<usize> {
+    fn generate_chunk(&mut self) -> Option<std::io::Result<usize>> {
         let out_range = self.buf.pos..self.buf.pos + 8;
         self.out_window.copy_from_slice(&self.buf[out_range]);
         self.buf.pos += 8;
@@ -97,14 +97,18 @@ impl<W: Write + Seek> UltraChunker<W> {
         self.calculate_new_distance();
 
         if let Some(result) = self.try_get_chunk(self.normal_size, MASK_S) {
-            return result;
+            return Some(result);
         }
 
         if let Some(result) = self.try_get_chunk(self.max_size, MASK_L) {
-            return result;
+            return Some(result);
         }
 
-        self.write_to_dst()
+        if self.chunk_len >= MAX_CHUNK_SIZE {
+            return Some(self.write_to_dst());
+        }
+
+        None
     }
 
     fn try_get_chunk(
@@ -114,8 +118,7 @@ impl<W: Write + Seek> UltraChunker<W> {
     ) -> Option<std::io::Result<usize>> {
         while self.chunk_len < size_limit {
             if self.buf.pos + 8 > self.buf.clen {
-                // can this break?
-                return Some(self.write_to_dst());
+                return None;
             }
 
             let in_range = self.buf.pos..self.buf.pos + 8;
@@ -161,9 +164,7 @@ impl<W: Write + Seek> Write for UltraChunker<W> {
         self.buf.copy_in(buf, in_len);
 
         while self.buf.has_something() {
-            self.normal_size = max(in_len, NORMAL_CHUNK_SIZE);
-            self.max_size = min(in_len, MAX_CHUNK_SIZE);
-            self.generate_chunk()?;
+            self.generate_chunk();
         }
 
         Ok(in_len)
