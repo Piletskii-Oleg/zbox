@@ -16,7 +16,6 @@ const BUFFER_SIZE: usize = 8 * MAX_SIZE;
 pub(super) struct FastChunker<W: Write + Seek> {
     dst: W,
     chunk_len: usize,
-    roll_hash: u64,
     buf: ChunkerBuf,
 }
 
@@ -28,7 +27,6 @@ impl<'a, W: Write + Seek> FastChunker<W> {
         FastChunker {
             dst,
             chunk_len: MIN_SIZE,
-            roll_hash: 0,
             buf: ChunkerBuf::new(MIN_SIZE),
         }
     }
@@ -53,7 +51,7 @@ impl<W: Write + Seek> Write for FastChunker<W> {
         while self.buf.has_something() {
             self.buf.pos -= MIN_SIZE;
 
-            let (hash, cut_point) = FastCDC::with_level(
+            let (_, cut_point) = FastCDC::with_level(
                 &*self.buf, // is &* necessary?
                 MIN_SIZE as u32,
                 AVG_SIZE as u32,
@@ -62,7 +60,6 @@ impl<W: Write + Seek> Write for FastChunker<W> {
             )
             .cut(self.buf.pos, self.buf.clen - self.buf.pos);
 
-            self.roll_hash = hash;
             self.chunk_len = cut_point - self.buf.pos;
             self.buf.pos = cut_point;
 
@@ -99,7 +96,6 @@ impl<W: Write + Seek> Write for FastChunker<W> {
         self.buf.pos = MIN_SIZE;
         self.buf.clen = 0;
         self.chunk_len = MIN_SIZE;
-        self.roll_hash = 0;
 
         self.dst.flush()
     }
