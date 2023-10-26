@@ -24,8 +24,6 @@ pub(super) struct UltraChunker<W: Write + Seek> {
     distance: usize,
     equal_window_count: usize,
     buf: ChunkerBuf,
-    normal_size: usize,
-    max_size: usize,
 }
 
 fn distance_map() -> Vec<Vec<usize>> {
@@ -49,8 +47,6 @@ impl<W: Write + Seek> UltraChunker<W> {
             distance: 0,
             equal_window_count: 0,
             buf: ChunkerBuf::new(MIN_CHUNK_SIZE),
-            normal_size: NORMAL_CHUNK_SIZE,
-            max_size: MAX_CHUNK_SIZE,
         }
     }
 
@@ -96,11 +92,11 @@ impl<W: Write + Seek> UltraChunker<W> {
         self.chunk_len += 8;
         self.calculate_new_distance();
 
-        if let Some(result) = self.try_get_chunk(self.normal_size, MASK_S) {
+        if let Some(result) = self.try_get_chunk(NORMAL_CHUNK_SIZE, MASK_S) {
             return Some(result);
         }
 
-        if let Some(result) = self.try_get_chunk(self.max_size, MASK_L) {
+        if let Some(result) = self.try_get_chunk(MAX_CHUNK_SIZE, MASK_L) {
             return Some(result);
         }
 
@@ -164,7 +160,7 @@ impl<W: Write + Seek> Write for UltraChunker<W> {
         self.buf.copy_in(buf, in_len);
 
         while self.buf.has_something() {
-            self.generate_chunk();
+           self.generate_chunk().map_or_else(|| Ok(0), |inner_result| inner_result)?;
         }
 
         Ok(in_len)
