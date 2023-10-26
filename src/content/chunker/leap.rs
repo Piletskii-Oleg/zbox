@@ -1,14 +1,10 @@
+use rand::prelude::{Distribution, ThreadRng};
+use rand_distr::Normal;
 use std::cmp::min;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
-use rand::prelude::{Distribution, ThreadRng};
-use rand_distr::Normal;
 
-use serde::{Deserialize, Serialize};
-
-// writer buffer length
-const BUFFER_SIZE: usize = 8 * MAX_CHUNK_SIZE;
+use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
 
 // leap-based cdc constants
 const MIN_CHUNK_SIZE: usize = 1024 * 16;
@@ -28,50 +24,12 @@ enum PointStatus {
     Unsatisfied(usize),
 }
 
-struct ChunkerBuf {
-    pos: usize,
-    clen: usize,
-    buf: Vec<u8>, // chunker buffer, fixed size: WTR_BUF_LEN
-}
-
 /// Chunker
 pub struct LeapChunker<W: Write + Seek> {
-    dst: W,                // destination writer
+    dst: W, // destination writer
     chunk_len: usize,
     ef_matrix: Vec<Vec<u8>>,
-    buf: ChunkerBuf,        // chunker buffer, fixed size: BUFFER_SIZE
-}
-
-impl ChunkerBuf {
-    fn new() -> Self {
-        let mut buf = vec![0u8; BUFFER_SIZE];
-        buf.shrink_to_fit();
-
-        Self {
-            pos: MIN_CHUNK_SIZE,
-            clen: 0,
-            buf,
-        }
-    }
-
-    fn reset_position(&mut self) {
-        let left_len = self.clen - self.pos;
-        let copy_range = self.pos..self.clen;
-
-        self.buf.copy_within(copy_range, 0);
-        self.clen = left_len;
-        self.pos = 0;
-    }
-
-    fn copy_into(&mut self, buf: &[u8], in_len: usize) {
-        let copy_range = self.clen..self.clen + in_len;
-        self.buf[copy_range].copy_from_slice(&buf[..in_len]);
-        self.clen += in_len;
-    }
-
-    fn has_something(&self) -> bool {
-        self.pos < self.clen
-    }
+    buf: ChunkerBuf, // chunker buffer, fixed size: BUFFER_SIZE
 }
 
 impl<W: Write + Seek> LeapChunker<W> {
@@ -82,7 +40,7 @@ impl<W: Write + Seek> LeapChunker<W> {
             dst,
             chunk_len: MIN_CHUNK_SIZE,
             ef_matrix,
-            buf: ChunkerBuf::new(),
+            buf: ChunkerBuf::new(MIN_CHUNK_SIZE),
         }
     }
 
@@ -94,7 +52,10 @@ impl<W: Write + Seek> LeapChunker<W> {
     fn is_point_satisfied(&self) -> PointStatus {
         // primary check, T<=x<M where T is WINDOW_SECONDARY_COUNT and M is WINDOW_COUNT
         for i in WINDOW_SECONDARY_COUNT..WINDOW_COUNT {
-            if !self.is_window_qualified(&self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i]) { // window is WINDOW_SIZE bytes long and moves to the left
+            if !self.is_window_qualified(
+                &self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i],
+            ) {
+                // window is WINDOW_SIZE bytes long and moves to the left
                 let leap = WINDOW_COUNT - i;
                 return PointStatus::Unsatisfied(leap);
             }
@@ -102,7 +63,9 @@ impl<W: Write + Seek> LeapChunker<W> {
 
         //secondary check, 0<=x<T bytes
         for i in 0..WINDOW_SECONDARY_COUNT {
-            if !self.is_window_qualified(&self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i]) {
+            if !self.is_window_qualified(
+                &self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i],
+            ) {
                 let leap = WINDOW_COUNT - WINDOW_SECONDARY_COUNT - i;
                 return PointStatus::Unsatisfied(leap);
             }
@@ -121,8 +84,7 @@ impl<W: Write + Seek> LeapChunker<W> {
     }
 
     fn write_to_dst(&mut self) -> IoResult<usize> {
-        let write_range =
-            self.buf.pos - self.chunk_len..self.buf.pos;
+        let write_range = self.buf.pos - self.chunk_len..self.buf.pos;
         let written = self.dst.write(&self.buf[write_range])?;
         assert_eq!(written, self.chunk_len);
 
@@ -146,13 +108,9 @@ impl<W: Write + Seek> Write for LeapChunker<W> {
         // copy source data into chunker buffer
         let in_len = min(BUFFER_SIZE - self.buf.clen, buf.len());
         assert!(in_len > 0);
-        self.buf.copy_into(buf, in_len);
+        self.buf.copy_in(buf, in_len);
 
         while self.buf.has_something() {
-            if self.buf.pos > BUFFER_SIZE {
-                self.write_to_dst()?;
-            }
-
             if self.chunk_len >= MAX_CHUNK_SIZE {
                 self.write_to_dst()?;
             } else {
@@ -163,7 +121,7 @@ impl<W: Write + Seek> Write for LeapChunker<W> {
                     PointStatus::Unsatisfied(leap) => {
                         self.buf.pos += leap;
                         self.chunk_len += leap;
-                    },
+                    }
                 };
             }
         }
@@ -176,7 +134,7 @@ impl<W: Write + Seek> Write for LeapChunker<W> {
         if p < self.buf.clen {
             self.chunk_len = self.buf.clen - p;
             let write_range = p..p + self.chunk_len;
-            let _ = self.dst.write(&self.buf.buf[write_range])?;
+            let _ = self.dst.write(&self.buf[write_range])?;
         }
 
         // reset chunker
@@ -211,20 +169,30 @@ fn generate_ef_matrix() -> Vec<Vec<u8>> {
     let e_matrix = transform_base_matrix(&base_matrix, &matrix_h);
     let f_matrix = transform_base_matrix(&base_matrix, &matrix_g);
 
-    let ef_matrix = e_matrix.iter().zip(f_matrix.iter())
+    let ef_matrix = e_matrix
+        .iter()
+        .zip(f_matrix.iter())
         .map(concatenate_bits_in_rows)
         .collect();
     ef_matrix
 }
 
-fn transform_base_matrix(base_matrix: &[Vec<u8>], additional_matrix: &[Vec<f64>]) -> Vec<Vec<bool>> {
-    base_matrix.iter()
+fn transform_base_matrix(
+    base_matrix: &[Vec<u8>],
+    additional_matrix: &[Vec<f64>],
+) -> Vec<Vec<bool>> {
+    base_matrix
+        .iter()
         .map(|row| transform_byte_row(row[0], additional_matrix))
         .collect::<Vec<Vec<bool>>>()
 }
 
-fn concatenate_bits_in_rows((row_x, row_y): (&Vec<bool>, &Vec<bool>)) -> Vec<u8> {
-    row_x.iter().zip(row_y.iter())
+fn concatenate_bits_in_rows(
+    (row_x, row_y): (&Vec<bool>, &Vec<bool>),
+) -> Vec<u8> {
+    row_x
+        .iter()
+        .zip(row_y.iter())
         .map(concatenate_bits)
         .collect()
 }
@@ -243,16 +211,29 @@ fn transform_byte_row(byte: u8, matrix: &[Vec<f64>]) -> Vec<bool> {
     (0..255)
         .map(|index| multiply_rows(byte, &matrix[index]))
         .enumerate()
-        .for_each(|(index, value)| if value > 0.0 { new_row[index / 51] += 1; });
+        .for_each(|(index, value)| {
+            if value > 0.0 {
+                new_row[index / 51] += 1;
+            }
+        });
 
-    new_row.iter()
-        .map(|&number| if number % 2 == 0 {false} else {true})
+    new_row
+        .iter()
+        .map(|&number| if number % 2 == 0 { false } else { true })
         .collect::<Vec<bool>>()
 }
 
 fn multiply_rows(byte: u8, numbers: &[f64]) -> f64 {
-    numbers.iter().enumerate()
-        .map(|(index, number)| if (byte >> index) & 1 == 1 {*number} else {-(*number)})
+    numbers
+        .iter()
+        .enumerate()
+        .map(|(index, number)| {
+            if (byte >> index) & 1 == 1 {
+                *number
+            } else {
+                -(*number)
+            }
+        })
         .sum()
 }
 
@@ -266,156 +247,5 @@ fn generate_matrix() -> Vec<Vec<f64>> {
 }
 
 fn generate_row(normal: &Normal<f64>, rng: &mut ThreadRng) -> Vec<f64> {
-    (0..MATRIX_WIDTH)
-        .map(|_| normal.sample(rng))
-        .collect()
-}
-
-impl Index<Range<usize>> for ChunkerBuf {
-    type Output = [u8];
-
-    fn index(&self, index: Range<usize>) -> &Self::Output {
-        &self.buf[index]
-    }
-}
-
-impl Index<usize> for ChunkerBuf {
-    type Output = u8;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.buf[index]
-    }
-}
-
-impl Deref for ChunkerBuf {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        &self.buf
-    }
-}
-
-impl IndexMut<usize> for ChunkerBuf {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.buf[index]
-    }
-}
-
-impl IndexMut<Range<usize>> for ChunkerBuf {
-    fn index_mut(&mut self, index: Range<usize>) -> &mut Self::Output {
-        &mut self.buf[index]
-    }
-}
-
-impl DerefMut for ChunkerBuf {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.buf
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::io::{copy, Cursor, Write};
-    use std::path::Path;
-    use plotters::prelude::IntoSegmentedCoord;
-
-    use super::*;
-    use crate::base::init_env;
-    use crate::content::chunk::Chunk;
-    use crate::content::chunker::Chunker;
-
-    #[test]
-    #[ignore]
-    fn file_dedup_ratio() {
-        let path = Path::new("C:/Users/ОЛЕГ/Downloads/JetBrains.Rider-2023.1.3.exe");
-        chunker_draw_sizes(path.to_str().unwrap());
-    }
-
-    #[derive(Debug)]
-    struct Sinker {
-        len: usize,
-        chks: Vec<Chunk>,
-    }
-
-    impl Write for Sinker {
-        fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-            self.chks.push(Chunk::new(self.len, buf.len()));
-            self.len += buf.len();
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> IoResult<()> {
-            // verify
-            let sum = self.chks.iter().fold(0, |sum, ref t| sum + t.len);
-            assert_eq!(sum, self.len);
-            for i in 0..(self.chks.len() - 2) {
-                assert_eq!(
-                    self.chks[i].pos + self.chks[i].len,
-                    self.chks[i + 1].pos
-                );
-            }
-
-            Ok(())
-        }
-    }
-
-    impl Seek for Sinker {
-        fn seek(&mut self, _: SeekFrom) -> IoResult<u64> {
-            Ok(0)
-        }
-    }
-
-    fn chunker_draw_sizes(path: &str) {
-        use plotters::prelude::*;
-        let vec = std::fs::read(path).unwrap();
-
-        init_env();
-
-        let mut sinker = Sinker {
-            len: 0,
-            chks: Vec::new(),
-        };
-
-        {
-            let mut cur = Cursor::new(vec.clone());
-            let mut ckr = Chunker::new(&mut sinker);
-            copy(&mut cur, &mut ckr).unwrap();
-            ckr.flush().unwrap();
-        }
-
-        const ADJUSTMENT: usize = 256;
-
-        let mut chunks: HashMap<usize, u32> = HashMap::new();
-        for chunk in sinker.chks {
-            chunks
-                .entry(chunk.len / ADJUSTMENT * ADJUSTMENT)
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
-        }
-
-        let root_area = SVGBackend::new("chart.svg", (600, 400))
-            .into_drawing_area();
-        root_area.fill(&WHITE).unwrap();
-
-        let mut ctx = ChartBuilder::on(&root_area)
-            .set_label_area_size(LabelAreaPosition::Left, 40)
-            .set_label_area_size(LabelAreaPosition::Bottom, 40)
-            .caption("Chunk Size Distribution", ("sans-serif", 50))
-            .build_cartesian_2d(
-                (MIN_CHUNK_SIZE..(*chunks.keys().max().unwrap() as f64 * 1.02) as usize).into_segmented(),
-                0u32..(*chunks.values().max().unwrap() as f64 * 1.02) as u32
-            )
-            .unwrap();
-
-        ctx.configure_mesh().draw().unwrap();
-
-        ctx.draw_series(chunks.iter().map(|(&size, &count)| {
-            let x0 = SegmentValue::Exact(size);
-            let x1 = SegmentValue::Exact(size + ADJUSTMENT);
-            let mut bar = Rectangle::new([(x0, count), (x1, 0)], RED.filled());
-            bar
-        })
-        ).unwrap();
-    }
+    (0..MATRIX_WIDTH).map(|_| normal.sample(rng)).collect()
 }

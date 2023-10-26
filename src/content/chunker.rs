@@ -1,19 +1,21 @@
-mod rabin;
+mod buffer;
 mod leap;
+mod rabin;
+mod ultra;
 
+use crate::content::chunker::ultra::UltraChunker;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use crate::content::chunker::rabin::RabinChunker;
 
 /// Chunker
 pub struct Chunker<W: Write + Seek> {
-    chunker: RabinChunker<W>
+    chunker: UltraChunker<W>,
 }
 
 impl<W: Write + Seek> Chunker<W> {
     pub fn new(dst: W) -> Self {
         Self {
-            chunker: RabinChunker::new(dst),
+            chunker: UltraChunker::new(dst),
         }
     }
 
@@ -47,6 +49,7 @@ impl<W: Write + Seek> Seek for Chunker<W> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::io::{copy, Cursor, Result as IoResult, Seek, SeekFrom, Write};
     use std::time::Instant;
 
@@ -55,6 +58,8 @@ mod tests {
     use crate::base::init_env;
     use crate::base::utils::speed_str;
     use crate::content::chunk::Chunk;
+
+    const MIN_CHUNK_SIZE: usize = 2048;
 
     #[derive(Debug)]
     struct Sinker {
@@ -151,5 +156,67 @@ mod tests {
         let time = now.elapsed();
 
         println!("Chunker perf: {}", speed_str(&time, DATA_LEN));
+    }
+
+    #[test]
+    #[ignore]
+    fn file_dedup_ratio() {
+        let path = std::path::Path::new("../rust-chunking/ubuntu.iso");
+        chunker_draw_sizes(path.to_str().unwrap());
+    }
+
+    fn chunker_draw_sizes(path: &str) {
+        use plotters::prelude::*;
+        let vec = std::fs::read(path).unwrap();
+
+        init_env();
+
+        let mut sinker = Sinker {
+            len: 0,
+            chks: Vec::new(),
+        };
+
+        {
+            let mut cur = Cursor::new(vec.clone());
+            let mut ckr = Chunker::new(&mut sinker);
+            copy(&mut cur, &mut ckr).unwrap();
+            ckr.flush().unwrap();
+        }
+
+        const ADJUSTMENT: usize = 256;
+
+        let mut chunks: HashMap<usize, u32> = HashMap::new();
+        for chunk in sinker.chks {
+            chunks
+                .entry(chunk.len / ADJUSTMENT * ADJUSTMENT)
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
+        }
+
+        let root_area =
+            SVGBackend::new("ultra-chart.svg", (600, 400)).into_drawing_area();
+        root_area.fill(&WHITE).unwrap();
+
+        let mut ctx = ChartBuilder::on(&root_area)
+            .set_label_area_size(LabelAreaPosition::Left, 40)
+            .set_label_area_size(LabelAreaPosition::Bottom, 40)
+            .caption("Chunk Size Distribution", ("sans-serif", 50))
+            .build_cartesian_2d(
+                (MIN_CHUNK_SIZE
+                    ..(*chunks.keys().max().unwrap() as f64 * 1.02) as usize)
+                    .into_segmented(),
+                0u32..(*chunks.values().max().unwrap() as f64 * 1.02) as u32,
+            )
+            .unwrap();
+
+        ctx.configure_mesh().draw().unwrap();
+
+        ctx.draw_series(chunks.iter().map(|(&size, &count)| {
+            let x0 = SegmentValue::Exact(size);
+            let x1 = SegmentValue::Exact(size + ADJUSTMENT);
+            let mut bar = Rectangle::new([(x0, count), (x1, 0)], RED.filled());
+            bar
+        }))
+        .unwrap();
     }
 }

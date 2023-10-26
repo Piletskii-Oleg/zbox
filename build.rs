@@ -15,7 +15,6 @@ fn main() {}
 
 #[cfg(not(feature = "docs-rs"))]
 fn main() {
-
     #[cfg(feature = "libsodium-bundled")]
     download_and_install_libsodium();
 
