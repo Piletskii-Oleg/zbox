@@ -160,7 +160,8 @@ impl<W: Write + Seek> Write for UltraChunker<W> {
         self.buf.copy_in(buf, in_len);
 
         while self.buf.has_something() {
-           self.generate_chunk().map_or_else(|| Ok(0), |inner_result| inner_result)?;
+            self.generate_chunk()
+                .map_or_else(|| Ok(0), |inner_result| inner_result)?;
         }
 
         Ok(in_len)
