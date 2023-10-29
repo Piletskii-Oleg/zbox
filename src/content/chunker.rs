@@ -3,6 +3,7 @@ mod fast;
 mod leap;
 mod rabin;
 mod ultra;
+mod quick;
 
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
