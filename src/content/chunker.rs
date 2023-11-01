@@ -3,21 +3,22 @@ mod fast;
 mod leap;
 mod rabin;
 mod ultra;
-mod quick;
+mod rabin_quick;
 
+use crate::content::chunker::fast::FastChunker;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use crate::content::chunker::fast::FastChunker;
+use crate::content::chunker::rabin_quick::QuickChunker;
 
 /// Chunker
 pub struct Chunker<W: Write + Seek> {
-    chunker: FastChunker<W>,
+    chunker: QuickChunker<W>,
 }
 
 impl<W: Write + Seek> Chunker<W> {
     pub fn new(dst: W) -> Self {
         Self {
-            chunker: FastChunker::new(dst),
+            chunker: QuickChunker::new(dst),
         }
     }
 
@@ -121,10 +122,15 @@ mod tests {
         init_env();
 
         // perpare test data
-        const DATA_LEN: usize = 765 * 1024;
-        let mut data = vec![0u8; DATA_LEN];
-        Crypto::random_buf(&mut data);
-        let mut cur = Cursor::new(data);
+        // const DATA_LEN: usize = 765 * 1024;
+        // let mut data = vec![0u8; DATA_LEN];
+        // Crypto::random_buf(&mut data);
+
+        let path = "world.tar";
+        let data = std::fs::read(path).unwrap();
+        let data_len = data.len();
+        let mut cur = Cursor::new(data.clone());
+
         let sinker = Sinker {
             len: 0,
             chks: Vec::new(),
@@ -134,7 +140,9 @@ mod tests {
         let mut ckr = Chunker::new(sinker);
         let result = copy(&mut cur, &mut ckr);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), DATA_LEN as u64);
+        assert_eq!(result.unwrap(), data_len as u64);
+        assert_eq!(cur.get_ref(), &data);
+
         ckr.flush().unwrap();
     }
 
@@ -143,10 +151,15 @@ mod tests {
         init_env();
 
         // perpare test data
-        const DATA_LEN: usize = 10 * 1024 * 1024;
-        let mut data = vec![0u8; DATA_LEN];
-        let seed = RandomSeed::from(&[0u8; RANDOM_SEED_SIZE]);
-        Crypto::random_buf_deterministic(&mut data, &seed);
+        // const DATA_LEN: usize = 10 * 1024 * 1024;
+        // let mut data = vec![0u8; DATA_LEN];
+        // let seed = RandomSeed::from(&[0u8; RANDOM_SEED_SIZE]);
+        // Crypto::random_buf_deterministic(&mut data, &seed);
+
+        let path = "world.tar";
+        let data = std::fs::read(path).unwrap();
+        let data_len = data.len();
+
         let mut cur = Cursor::new(data);
         let sinker = VoidSinker {};
 
@@ -157,7 +170,7 @@ mod tests {
         ckr.flush().unwrap();
         let time = now.elapsed();
 
-        println!("Chunker perf: {}", speed_str(&time, DATA_LEN));
+        println!("Chunker perf: {}", speed_str(&time, data_len));
     }
 
     #[test]
