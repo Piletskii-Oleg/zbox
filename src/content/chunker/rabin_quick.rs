@@ -49,7 +49,7 @@ struct ChunkerParams {
     ir: Vec<u64>,      // irreducible polynomial, length is 256
 }
 
-impl<'a, W: Write + Seek> QuickChunker<W> {
+impl<W: Write + Seek> QuickChunker<W> {
     pub(super) fn new(dst: W) -> QuickChunker<W> {
         QuickChunker {
             dst,
@@ -82,7 +82,7 @@ impl<'a, W: Write + Seek> QuickChunker<W> {
 
             let end_range = self.buf.pos + front_length - 3..self.buf.pos + front_length;
             if let Some(end_length) = self.back.get(&self.buf[end_range]) {
-                if front_length == end_length {
+                if *front_length == *end_length {
                     return Some(*front_length);
                 }
             }
@@ -100,6 +100,18 @@ impl<'a, W: Write + Seek> QuickChunker<W> {
         let mut end_win = [0u8; 3];
         end_win.copy_from_slice(&self.buf[end_range]);
         self.back.insert(end_win, self.chunk_len);
+    }
+
+    fn write_repeated_chunks(&mut self) -> IoResult<()> {
+        while let Some(jump) = self.check_chunk() {
+            self.buf.pos += jump;
+            self.chunk_len = jump;
+            let write_range =
+                self.buf.pos - self.chunk_len..self.buf.pos;
+            let written = self.dst.write(&self.buf[write_range])?;
+            assert_eq!(written, self.chunk_len);
+        }
+        Ok(())
     }
 }
 
@@ -156,14 +168,7 @@ impl<W: Write + Seek> Write for QuickChunker<W> {
                         self.buf.reset_position();
                     }
 
-                    while let Some(jump) = self.check_chunk() {
-                        self.buf.pos += jump;
-                        self.chunk_len = jump;
-                        let write_range =
-                            self.buf.pos - self.chunk_len..self.buf.pos;
-                        let written = self.dst.write(&self.buf[write_range])?;
-                        assert_eq!(written, self.chunk_len);
-                    }
+                    self.write_repeated_chunks()?;
 
                     // jump to next start sliding position
                     self.buf.pos += WIN_SLIDE_POS;

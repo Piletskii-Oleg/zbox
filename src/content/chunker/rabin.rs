@@ -44,7 +44,7 @@ struct ChunkerParams {
     ir: Vec<u64>,      // irreducible polynomial, length is 256
 }
 
-impl<'a, W: Write + Seek> RabinChunker<W> {
+impl<W: Write + Seek> RabinChunker<W> {
     pub(super) fn new(dst: W) -> RabinChunker<W> {
         RabinChunker {
             dst,
