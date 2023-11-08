@@ -52,9 +52,9 @@ impl<W: Write + Seek> SuperChunker<W> {
                 self.buf.pos += found_length;
 
                 let write_range =
-                    self.buf.pos - self.chunk_len..self.buf.pos;
+                    self.buf.pos - found_length..self.buf.pos;
                 let written = self.dst.write(&self.buf[write_range])?;
-                assert_eq!(written, self.chunk_len);
+                assert_eq!(written, found_length);
             }
             self.record_last_hash = false;
         } else {
@@ -88,7 +88,7 @@ impl<W: Write + Seek> Write for SuperChunker<W> {
 
             self.buf.pos += length;
 
-            self.use_record_map(hash, length)?; // does it affect performance?
+            self.use_record_map(hash, length)?;
 
             if self.buf.pos + MAX_CHUNK_SIZE >= BUFFER_SIZE {
                 self.buf.reset_position();
