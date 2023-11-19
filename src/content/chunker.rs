@@ -2,21 +2,22 @@ mod buffer;
 mod fast;
 mod leap;
 mod rabin;
+mod supercdc;
 mod ultra;
 
+use crate::content::chunker::supercdc::SuperChunker;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
-use crate::content::chunker::fast::FastChunker;
 
 /// Chunker
 pub struct Chunker<W: Write + Seek> {
-    chunker: FastChunker<W>,
+    chunker: SuperChunker<W>,
 }
 
 impl<W: Write + Seek> Chunker<W> {
     pub fn new(dst: W) -> Self {
         Self {
-            chunker: FastChunker::new(dst),
+            chunker: SuperChunker::new(dst),
         }
     }
 
@@ -142,7 +143,7 @@ mod tests {
         init_env();
 
         // perpare test data
-        const DATA_LEN: usize = 10 * 1024 * 1024;
+        const DATA_LEN: usize = 100 * 1024 * 1024;
         let mut data = vec![0u8; DATA_LEN];
         let seed = RandomSeed::from(&[0u8; RANDOM_SEED_SIZE]);
         Crypto::random_buf_deterministic(&mut data, &seed);
