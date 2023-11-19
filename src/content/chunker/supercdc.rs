@@ -20,7 +20,6 @@ pub(super) struct SuperChunker<W: Write + Seek> {
     dst: W,
     buf: ChunkerBuf,
     records: HashMap<u64, usize>,
-    chunk_len: usize,
     last_hash: u64,
     record_last_hash: bool,
 }
@@ -31,7 +30,6 @@ impl<W: Write + Seek> SuperChunker<W> {
             dst,
             records: Default::default(),
             buf: ChunkerBuf::new(0),
-            chunk_len: 0,
             last_hash: 0,
             record_last_hash: false,
         }
@@ -51,8 +49,7 @@ impl<W: Write + Seek> SuperChunker<W> {
             if self.buf.pos + found_length < self.buf.clen {
                 self.buf.pos += found_length;
 
-                let write_range =
-                    self.buf.pos - found_length..self.buf.pos;
+                let write_range = self.buf.pos - found_length..self.buf.pos;
                 let written = self.dst.write(&self.buf[write_range])?;
                 assert_eq!(written, found_length);
             }
@@ -134,7 +131,7 @@ fn find_border(buf: &[u8]) -> (u64, usize) {
     let mut pos: usize = MIN_CHUNK_SIZE / 2;
 
     let mut breakpoint_gear = 0;
-    let mut gear = 0;
+    let mut gear;
 
     for index in 1..16 {
         fingerprint = fingerprint
