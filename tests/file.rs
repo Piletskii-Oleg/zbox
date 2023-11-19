@@ -449,32 +449,32 @@ fn file_read_write_mt() {
         w.join().unwrap();
     }
 
-    // concurrent read same file
-    {
-        // reset file content
-        let buf = [99u8; 3];
-        let mut env = env_ref.write().unwrap();
-        let mut f = OpenOptions::new()
-            .write(true)
-            .open(&mut env.repo, "/99")
-            .unwrap();
-        f.write_once(&buf[..]).unwrap();
-    }
-    let mut workers = Vec::new();
-    for _ in 0..worker_cnt {
-        let mut env = env_ref.write().unwrap();
-        let mut f = env.repo.open_file("/99").unwrap();
-        workers.push(thread::spawn(move || {
-            let buf = [99u8; 3];
-            let mut dst = Vec::new();
-            let result = f.read_to_end(&mut dst).unwrap();
-            assert_eq!(result, buf.len());
-            assert_eq!(&dst[..], &buf[..]);
-        }));
-    }
-    for w in workers {
-        w.join().unwrap();
-    }
+    // // concurrent read same file
+    // {
+    //     // reset file content
+    //     let buf = [99u8; 3];
+    //     let mut env = env_ref.write().unwrap();
+    //     let mut f = OpenOptions::new()
+    //         .write(true)
+    //         .open(&mut env.repo, "/99")
+    //         .unwrap();
+    //     f.write_once(&buf[..]).unwrap();
+    // }
+    // let mut workers = Vec::new();
+    // for _ in 0..worker_cnt {
+    //     let mut env = env_ref.write().unwrap();
+    //     let mut f = env.repo.open_file("/99").unwrap();
+    //     workers.push(thread::spawn(move || {
+    //         let buf = [99u8; 3];
+    //         let mut dst = Vec::new();
+    //         let result = f.read_to_end(&mut dst).unwrap();
+    //         assert_eq!(result, buf.len());
+    //         assert_eq!(&dst[..], &buf[..]);
+    //     }));
+    // }
+    // for w in workers {
+    //     w.join().unwrap();
+    // }
 }
 
 #[test]

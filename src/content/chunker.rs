@@ -13,14 +13,20 @@ use std::ops::Range;
 
 const MAX_SIZE: usize = 1024 * 64;
 
-pub trait Chunking {
+trait Chunking {
     fn next_write_range(
         &mut self,
-        buffer: &ChunkerBuf,
+        buf: &mut ChunkerBuf,
     ) -> (Range<usize>, usize);
-    fn jump_to_next_pos(&mut self);
-    fn remaining_write_range(&mut self, buffer: &ChunkerBuf) -> (Range<usize>, usize);
-    fn reset(&mut self);
+
+    fn jump_to_next_pos(&mut self, buf: &mut ChunkerBuf);
+
+    fn remaining_write_range(
+        &mut self,
+        buf: &mut ChunkerBuf,
+    ) -> Option<Range<usize>>;
+
+    fn reset(&mut self, buf: &mut ChunkerBuf);
 }
 
 /// Chunker
@@ -34,13 +40,14 @@ impl<W: Write + Seek> Chunker<W> {
     pub fn new(dst: W) -> Self {
         Self {
             dst,
-            buffer: ChunkerBuf::new(2048),
-            chunker: SuperChunker::new(dst),
+            buffer: ChunkerBuf::new(0),
+            chunker: Box::new(SuperChunker::new()),
         }
     }
 
-    pub fn into_inner(self) -> IoResult<W> {
-        self.chunker.into_inner()
+    pub fn into_inner(mut self) -> IoResult<W> {
+        self.flush()?;
+        Ok(self.dst)
     }
 }
 
@@ -55,7 +62,7 @@ impl<W: Write + Seek> Write for Chunker<W> {
 
         while self.buffer.has_something() {
             let (write_range, chunk_length) =
-                self.chunker.next_write_range(&self.buffer);
+                self.chunker.next_write_range(&mut self.buffer);
             let written = self.dst.write(&self.buffer[write_range])?;
             assert_eq!(written, chunk_length);
 
@@ -63,19 +70,20 @@ impl<W: Write + Seek> Write for Chunker<W> {
                 self.buffer.reset_position();
             }
 
-            self.chunker.jump_to_next_pos();
+            self.chunker.jump_to_next_pos(&mut self.buffer);
         }
 
         Ok(in_len)
     }
 
     fn flush(&mut self) -> IoResult<()> {
-        let (write_range, remaining) = self.chunker.remaining_write_range(&self.buffer);
-        if remaining > 0 {
+        if let Some(write_range) =
+            self.chunker.remaining_write_range(&mut self.buffer)
+        {
             let _ = self.dst.write(&self.buffer[write_range])?;
         }
 
-        self.chunker.reset();
+        self.chunker.reset(&mut self.buffer);
 
         self.dst.flush()
     }
@@ -89,7 +97,7 @@ impl<W: Write + Seek> Debug for Chunker<W> {
 
 impl<W: Write + Seek> Seek for Chunker<W> {
     fn seek(&mut self, pos: SeekFrom) -> IoResult<u64> {
-        self.chunker.seek(pos)
+        self.dst.seek(pos)
     }
 }
 

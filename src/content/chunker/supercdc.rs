@@ -1,7 +1,9 @@
 use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
+use crate::content::chunker::Chunking;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
+use std::ops::Range;
 
 const MIN_CHUNK_SIZE: usize = 1024 * 4;
 const AVG_CHUNK_SIZE: usize = 1024 * 8;
@@ -16,104 +18,75 @@ const MASK_S_LS: u64 = MASK_B << 1;
 const MASK_L_LS: u64 = MASK_L << 1;
 const MASK_B_LS: u64 = MASK_B << 1;
 
-pub(super) struct SuperChunker<W: Write + Seek> {
-    dst: W,
-    buf: ChunkerBuf,
+pub(super) struct SuperChunker {
     records: HashMap<u64, usize>,
     last_hash: u64,
     record_last_hash: bool,
 }
 
-impl<W: Write + Seek> SuperChunker<W> {
-    pub fn new(dst: W) -> Self {
+impl Chunking for SuperChunker {
+    fn next_write_range(
+        &mut self,
+        buf: &mut ChunkerBuf,
+    ) -> (Range<usize>, usize) {
+        let search_range = buf.pos..buf.clen;
+        let (hash, length) = find_border(&buf[search_range]);
+
+        let write_range = buf.pos..buf.pos + length;
+
+        buf.pos += length;
+
+        (write_range, length)
+    }
+
+    fn jump_to_next_pos(&mut self, buf: &mut ChunkerBuf) {}
+
+    fn remaining_write_range(
+        &mut self,
+        buf: &mut ChunkerBuf,
+    ) -> Option<Range<usize>> {
+        if buf.pos < buf.clen {
+            Some(buf.pos..buf.clen)
+        } else {
+            None
+        }
+    }
+
+    fn reset(&mut self, buf: &mut ChunkerBuf) {
+        buf.pos = 0;
+        buf.clen = 0;
+    }
+}
+
+impl SuperChunker {
+    pub fn new() -> Self {
         Self {
-            dst,
             records: Default::default(),
-            buf: ChunkerBuf::new(0),
             last_hash: 0,
             record_last_hash: false,
         }
     }
 
-    pub fn into_inner(mut self) -> IoResult<W> {
-        self.flush()?;
-        Ok(self.dst)
-    }
-
-    fn use_record_map(&mut self, hash: u64, length: usize) -> IoResult<()> {
-        if self.record_last_hash {
-            self.records.insert(self.last_hash, length);
-        }
-
-        if let Some(&found_length) = self.records.get(&hash) {
-            if self.buf.pos + found_length < self.buf.clen {
-                self.buf.pos += found_length;
-
-                let write_range = self.buf.pos - found_length..self.buf.pos;
-                let written = self.dst.write(&self.buf[write_range])?;
-                assert_eq!(written, found_length);
-            }
-            self.record_last_hash = false;
-        } else {
-            self.record_last_hash = true;
-        }
-
-        self.last_hash = hash;
-
-        Ok(())
-    }
-}
-
-impl<W: Write + Seek> Write for SuperChunker<W> {
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-
-        // copy source data into chunker buffer
-        let in_len = min(BUFFER_SIZE - self.buf.clen, buf.len());
-        assert!(in_len > 0);
-        self.buf.copy_in(buf, in_len);
-
-        while self.buf.has_something() {
-            let find_range = self.buf.pos..self.buf.clen;
-            let (hash, length) = find_border(&self.buf[find_range]);
-
-            let write_range = self.buf.pos..self.buf.pos + length;
-            let written = self.dst.write(&self.buf[write_range])?;
-            assert_eq!(written, length);
-
-            self.buf.pos += length;
-
-            self.use_record_map(hash, length)?;
-
-            if self.buf.pos + MAX_CHUNK_SIZE >= BUFFER_SIZE {
-                self.buf.reset_position();
-            }
-        }
-
-        Ok(in_len)
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        // flush remaining data to destination
-        if self.buf.pos < self.buf.clen {
-            let write_range = self.buf.pos..self.buf.clen;
-            let _ = self.dst.write(&self.buf[write_range])?;
-        }
-
-        // reset chunker
-        self.buf.pos = 0;
-        self.buf.clen = 0;
-
-        self.dst.flush()
-    }
-}
-
-impl<W: Write + Seek> Seek for SuperChunker<W> {
-    fn seek(&mut self, pos: SeekFrom) -> IoResult<u64> {
-        self.dst.seek(pos)
-    }
+    // fn use_record_map(&mut self, hash: u64, length: usize) -> IoResult<()> {
+    //     if self.record_last_hash {
+    //         self.records.insert(self.last_hash, length);
+    //     }
+    //
+    //     if let Some(&found_length) = self.records.get(&hash) {
+    //         if self.buf.pos + found_length < self.buf.clen {
+    //             self.buf.pos += found_length;
+    //
+    //             let write_range = self.buf.pos - found_length..self.buf.pos;
+    //         }
+    //         self.record_last_hash = false;
+    //     } else {
+    //         self.record_last_hash = true;
+    //     }
+    //
+    //     self.last_hash = hash;
+    //
+    //     Ok(())
+    // }
 }
 
 fn find_border(buf: &[u8]) -> (u64, usize) {
