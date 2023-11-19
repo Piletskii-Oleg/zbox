@@ -36,7 +36,7 @@ impl ChunkerBuf {
         self.pos < self.clen
     }
 
-    pub fn append_to_buf(&mut self, buf: &[u8]) -> usize {
+    pub fn append(&mut self, buf: &[u8]) -> usize {
         let in_len = min(BUFFER_SIZE - self.clen, buf.len());
         assert!(in_len > 0);
 

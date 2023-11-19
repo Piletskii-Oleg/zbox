@@ -58,7 +58,7 @@ impl<W: Write + Seek> Write for Chunker<W> {
             return Ok(0);
         }
 
-        let in_len = self.buffer.append_to_buf(buf);
+        let in_len = self.buffer.append(buf);
 
         while self.buffer.has_something() {
             let (write_range, chunk_length) =
