@@ -27,7 +27,7 @@ impl<'a, W: Write + Seek> FastChunker<W> {
         FastChunker {
             dst,
             chunk_len: MIN_SIZE,
-            buf: ChunkerBuf::new(MIN_SIZE),
+            buf: ChunkerBuf::new(),
         }
     }
 

@@ -40,7 +40,7 @@ impl<W: Write + Seek> Chunker<W> {
     pub fn new(dst: W) -> Self {
         Self {
             dst,
-            buffer: ChunkerBuf::new(0),
+            buffer: ChunkerBuf::new(),
             chunker: Box::new(SuperChunker::new()),
         }
     }

@@ -48,7 +48,7 @@ impl<'a, W: Write + Seek> RabinChunker<W> {
     pub(super) fn new(dst: W) -> RabinChunker<W> {
         RabinChunker {
             dst,
-            buf: ChunkerBuf::new(WIN_SLIDE_POS),
+            buf: ChunkerBuf::new(),
             params: ChunkerParams::new(),
             chunk_len: WIN_SLIDE_POS,
             win_idx: 0,

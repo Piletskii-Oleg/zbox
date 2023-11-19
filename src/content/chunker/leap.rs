@@ -40,7 +40,7 @@ impl<W: Write + Seek> LeapChunker<W> {
             dst,
             chunk_len: MIN_CHUNK_SIZE,
             ef_matrix,
-            buf: ChunkerBuf::new(MIN_CHUNK_SIZE),
+            buf: ChunkerBuf::new(),
         }
     }
 

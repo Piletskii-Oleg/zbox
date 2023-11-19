@@ -10,11 +10,11 @@ pub(super) struct ChunkerBuf {
 }
 
 impl ChunkerBuf {
-    pub fn new(pos: usize) -> Self {
+    pub fn new() -> Self {
         let mut buf = vec![0u8; BUFFER_SIZE];
         buf.shrink_to_fit();
 
-        Self { pos, clen: 0, buf }
+        Self { pos: 0, clen: 0, buf }
     }
 
     pub fn reset_position(&mut self) {

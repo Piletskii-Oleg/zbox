@@ -46,7 +46,7 @@ impl<W: Write + Seek> UltraChunker<W> {
             chunk_len: MIN_CHUNK_SIZE,
             distance: 0,
             equal_window_count: 0,
-            buf: ChunkerBuf::new(MIN_CHUNK_SIZE),
+            buf: ChunkerBuf::new(),
         }
     }
 
