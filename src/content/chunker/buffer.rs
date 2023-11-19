@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
 
 pub(super) const BUFFER_SIZE: usize = 8 * 64 * 1024;
@@ -9,14 +10,14 @@ pub(super) struct ChunkerBuf {
 }
 
 impl ChunkerBuf {
-    pub(super) fn new(pos: usize) -> Self {
+    pub fn new(pos: usize) -> Self {
         let mut buf = vec![0u8; BUFFER_SIZE];
         buf.shrink_to_fit();
 
         Self { pos, clen: 0, buf }
     }
 
-    pub(super) fn reset_position(&mut self) {
+    pub fn reset_position(&mut self) {
         let left_len = self.clen - self.pos;
         let copy_range = self.pos..self.clen;
 
@@ -25,14 +26,21 @@ impl ChunkerBuf {
         self.pos = 0;
     }
 
-    pub(super) fn copy_in(&mut self, buf: &[u8], in_len: usize) {
+    pub fn copy_in(&mut self, buf: &[u8], in_len: usize) {
         let copy_range = self.clen..self.clen + in_len;
         self.buf[copy_range].copy_from_slice(&buf[..in_len]);
         self.clen += in_len;
     }
 
-    pub(super) fn has_something(&self) -> bool {
+    pub fn has_something(&self) -> bool {
         self.pos < self.clen
+    }
+
+    pub fn append_to_buf(&mut self, buf: &[u8]) -> usize {
+        let in_len = min(BUFFER_SIZE - self.clen, buf.len());
+        assert!(in_len > 0);
+        self.buf.copy_in(buf, in_len);
+        in_len
     }
 }
 

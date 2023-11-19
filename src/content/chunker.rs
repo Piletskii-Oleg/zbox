@@ -5,18 +5,36 @@ mod rabin;
 mod supercdc;
 mod ultra;
 
+use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
 use crate::content::chunker::supercdc::SuperChunker;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
+use std::ops::Range;
+
+const MAX_SIZE: usize = 1024 * 64;
+
+pub trait Chunking {
+    fn next_write_range(
+        &mut self,
+        buffer: &ChunkerBuf,
+    ) -> (Range<usize>, usize);
+    fn jump_to_next_pos(&mut self);
+    fn remaining_write_range(&mut self, buffer: &ChunkerBuf) -> (Range<usize>, usize);
+    fn reset(&mut self);
+}
 
 /// Chunker
 pub struct Chunker<W: Write + Seek> {
-    chunker: SuperChunker<W>,
+    dst: W,
+    buffer: ChunkerBuf,
+    chunker: Box<dyn Chunking>,
 }
 
 impl<W: Write + Seek> Chunker<W> {
     pub fn new(dst: W) -> Self {
         Self {
+            dst,
+            buffer: ChunkerBuf::new(2048),
             chunker: SuperChunker::new(dst),
         }
     }
@@ -29,11 +47,37 @@ impl<W: Write + Seek> Chunker<W> {
 impl<W: Write + Seek> Write for Chunker<W> {
     // consume bytes stream, output chunks
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.chunker.write(buf)
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        let in_len = self.buffer.append_to_buf(buf);
+
+        while self.buffer.has_something() {
+            let (write_range, chunk_length) =
+                self.chunker.next_write_range(&self.buffer);
+            let written = self.dst.write(&self.buffer[write_range])?;
+            assert_eq!(written, chunk_length);
+
+            if self.buffer.pos + MAX_SIZE >= BUFFER_SIZE {
+                self.buffer.reset_position();
+            }
+
+            self.chunker.jump_to_next_pos();
+        }
+
+        Ok(in_len)
     }
 
     fn flush(&mut self) -> IoResult<()> {
-        self.chunker.flush()
+        let (write_range, remaining) = self.chunker.remaining_write_range(&self.buffer);
+        if remaining > 0 {
+            let _ = self.dst.write(&self.buffer[write_range])?;
+        }
+
+        self.chunker.reset();
+
+        self.dst.flush()
     }
 }
 
