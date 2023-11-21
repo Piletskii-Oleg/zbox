@@ -114,3 +114,7 @@ reqwest = { version = "0.9.10", default-features = false, features = ["rustls-tl
 tar = "0.4.37"
 tempfile = "3.2.0"
 zip = "0.5.13"
+
+[profile.release-with-info]
+inherits = "release"
+debug = true

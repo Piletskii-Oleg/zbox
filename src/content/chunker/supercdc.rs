@@ -1,8 +1,7 @@
-use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
+use crate::content::chunker::buffer::{ChunkerBuf};
 use crate::content::chunker::Chunking;
 use std::cmp::min;
 use std::collections::HashMap;
-use std::io::{Result as IoResult, Seek, SeekFrom, Write};
 use std::ops::Range;
 
 const MIN_CHUNK_SIZE: usize = 1024 * 4;
@@ -30,31 +29,13 @@ impl Chunking for SuperChunker {
         buf: &mut ChunkerBuf,
     ) -> (Range<usize>, usize) {
         let search_range = buf.pos..buf.clen;
-        let (hash, length) = find_border(&buf[search_range]);
+        let (_, length) = find_border(&buf[search_range]);
 
         let write_range = buf.pos..buf.pos + length;
 
         buf.pos += length;
 
         (write_range, length)
-    }
-
-    fn jump_to_next_pos(&mut self, buf: &mut ChunkerBuf) {}
-
-    fn remaining_write_range(
-        &mut self,
-        buf: &mut ChunkerBuf,
-    ) -> Option<Range<usize>> {
-        if buf.pos < buf.clen {
-            Some(buf.pos..buf.clen)
-        } else {
-            None
-        }
-    }
-
-    fn reset(&mut self, buf: &mut ChunkerBuf) {
-        buf.pos = 0;
-        buf.clen = 0;
     }
 }
 
