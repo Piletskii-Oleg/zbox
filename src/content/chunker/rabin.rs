@@ -1,8 +1,10 @@
-use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
+use crate::content::chunker::buffer::{ChunkerBuf};
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::fmt::{self, Debug};
-use std::io::{Result as IoResult, Seek, SeekFrom, Write};
+use std::io::{Write};
+use std::ops::Range;
+use crate::content::chunker::Chunking;
 
 // taken from pcompress implementation
 // https://github.com/moinakg/pcompress
@@ -26,14 +28,8 @@ const WIN_MASK: usize = WIN_SIZE - 1;
 const WIN_SLIDE_OFFSET: usize = 64;
 const WIN_SLIDE_POS: usize = MIN_SIZE - WIN_SLIDE_OFFSET;
 
-pub(super) struct RabinChunker<W: Write + Seek> {
-    pub(super) dst: W,
-    buf: ChunkerBuf,
+pub(super) struct RabinChunker {
     params: ChunkerParams, // chunker parameters
-    chunk_len: usize,
-    win_idx: usize,
-    roll_hash: u64,
-    win: [u8; WIN_SIZE], // rolling hash circle window
 }
 
 /// Pre-calculated chunker parameters
@@ -44,107 +40,67 @@ struct ChunkerParams {
     ir: Vec<u64>,      // irreducible polynomial, length is 256
 }
 
-impl<'a, W: Write + Seek> RabinChunker<W> {
-    pub(super) fn new(dst: W) -> RabinChunker<W> {
+impl RabinChunker {
+    pub(super) fn new() -> RabinChunker {
         RabinChunker {
-            dst,
-            buf: ChunkerBuf::new(),
             params: ChunkerParams::new(),
-            chunk_len: WIN_SLIDE_POS,
-            win_idx: 0,
-            roll_hash: 0,
-            win: [0u8; WIN_SIZE],
         }
-    }
-
-    pub(super) fn into_inner(mut self) -> IoResult<W> {
-        self.flush()?;
-        Ok(self.dst)
     }
 }
 
-impl<W: Write + Seek> Write for RabinChunker<W> {
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
+impl Chunking for RabinChunker {
+    fn next_write_range(&mut self, buf: &mut ChunkerBuf) -> (Range<usize>, usize) {
+        let search_range = buf.pos..buf.clen;
+        let length = find_border(&buf[search_range], &self.params);
 
-        // copy source data into chunker buffer
-        let in_len = min(BUFFER_SIZE - self.buf.clen, buf.len());
-        assert!(in_len > 0);
-        self.buf.copy_in(buf, in_len);
+        let write_range = buf.pos..buf.pos + length;
 
-        while self.buf.has_something() {
-            // get current byte and pushed out byte
-            let ch = self.buf[self.buf.pos];
-            let out = self.win[self.win_idx] as usize;
-            let pushed_out = self.params.out_map[out];
+        buf.pos += length;
 
-            // calculate Rabin rolling hash
-            self.roll_hash = (self.roll_hash * PRIME) & MASK;
-            self.roll_hash += u64::from(ch);
-            self.roll_hash = self.roll_hash.wrapping_sub(pushed_out) & MASK;
+        (write_range, length)
+    }
+}
 
-            // forward circle window
-            self.win[self.win_idx] = ch;
-            self.win_idx = (self.win_idx + 1) & WIN_MASK;
+fn find_border(buf: &[u8], params: &ChunkerParams) -> usize {
+    if buf.len() < MIN_SIZE {
+        return buf.len();
+    }
 
-            self.chunk_len += 1;
-            self.buf.pos += 1;
+    let remaining = min(MAX_SIZE, buf.len());
+    let mut pos = WIN_SLIDE_POS;
+    let mut chunk_len = WIN_SLIDE_POS;
 
-            if self.chunk_len >= MIN_SIZE {
-                let chksum = self.roll_hash ^ self.params.ir[out];
+    let mut win = [0u8; WIN_SIZE];
+    let mut win_idx = 0;
+    let mut roll_hash = 0;
 
-                // reached cut point, chunk can be produced now
-                if (chksum & CUT_MASK) == 0 || self.chunk_len >= MAX_SIZE {
-                    // write the chunk to destination writer,
-                    // ensure it is consumed in whole
-                    let write_range =
-                        self.buf.pos - self.chunk_len..self.buf.pos;
-                    let written = self.dst.write(&self.buf[write_range])?;
-                    assert_eq!(written, self.chunk_len);
+    while pos < remaining {
+        let ch = buf[pos];
+        let out = win[win_idx] as usize;
+        let pushed_out = params.out_map[out];
 
-                    // not enough space in buffer, copy remaining to
-                    // the head of buffer and reset buf position
-                    if self.buf.pos + MAX_SIZE >= BUFFER_SIZE {
-                        self.buf.reset_position();
-                    }
+        // calculate Rabin rolling hash
+        roll_hash = (roll_hash * PRIME) & MASK;
+        roll_hash += u64::from(ch);
+        roll_hash = roll_hash.wrapping_sub(pushed_out) & MASK;
 
-                    // jump to next start sliding position
-                    self.buf.pos += WIN_SLIDE_POS;
-                    self.chunk_len = WIN_SLIDE_POS;
-                }
+        // forward circle window
+        win[win_idx] = ch;
+        win_idx = (win_idx + 1) & WIN_MASK;
+
+        chunk_len += 1;
+        pos += 1;
+
+        if chunk_len >= MIN_SIZE {
+            let chksum = roll_hash ^ params.ir[out];
+
+            if (chksum & CUT_MASK) == 0 || chunk_len >= MAX_SIZE {
+                return chunk_len;
             }
         }
-
-        Ok(in_len)
     }
 
-    fn flush(&mut self) -> IoResult<()> {
-        // flush remaining data to destination
-        let p = self.buf.pos - self.chunk_len;
-        if p < self.buf.clen {
-            self.chunk_len = self.buf.clen - p;
-            let write_range = p..p + self.chunk_len;
-            let _ = self.dst.write(&self.buf[write_range])?;
-        }
-
-        // reset chunker
-        self.buf.pos = WIN_SLIDE_POS;
-        self.buf.clen = 0;
-        self.chunk_len = WIN_SLIDE_POS;
-        self.win_idx = 0;
-        self.roll_hash = 0;
-        self.win = [0u8; WIN_SIZE];
-
-        self.dst.flush()
-    }
-}
-
-impl<W: Write + Seek> Seek for RabinChunker<W> {
-    fn seek(&mut self, pos: SeekFrom) -> IoResult<u64> {
-        self.dst.seek(pos)
-    }
+    chunk_len
 }
 
 impl ChunkerParams {
