@@ -1,8 +1,9 @@
 use crate::content::chunker::buffer::ChunkerBuf;
 use fastcdc::v2020::{FastCDC, Normalization};
-use std::cmp::min;
 use std::fmt::{self, Debug};
-use std::io::{Result as IoResult, Seek, SeekFrom, Write};
+use std::io::{Write};
+use std::ops::Range;
+use crate::content::chunker::Chunking;
 
 const MIN_SIZE: usize = 2 * 1024; // minimal chunk size, 2k
 const AVG_SIZE: usize = 2 * 1024; // average chunk size, 2k
@@ -13,102 +14,30 @@ const NORMALIZATION_LEVEL: Normalization = Normalization::Level2;
 // writer buffer length
 const BUFFER_SIZE: usize = 8 * MAX_SIZE;
 
-pub(super) struct FastChunker<W: Write + Seek> {
-    dst: W,
-    chunk_len: usize,
-    buf: ChunkerBuf,
-}
+pub(super) struct FastChunker;
 
-impl<'a, W: Write + Seek> FastChunker<W> {
-    pub(super) fn new(dst: W) -> Self {
-        let mut buf = vec![0u8; BUFFER_SIZE];
-        buf.shrink_to_fit();
-
-        FastChunker {
-            dst,
-            chunk_len: MIN_SIZE,
-            buf: ChunkerBuf::new(),
-        }
-    }
-
-    pub(super) fn into_inner(mut self) -> IoResult<W> {
-        self.flush()?;
-        Ok(self.dst)
+impl FastChunker {
+    pub(super) fn new() -> Self {
+        FastChunker
     }
 }
 
-impl<W: Write + Seek> Write for FastChunker<W> {
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
+impl Chunking for FastChunker {
+    fn next_write_range(&mut self, buf: &mut ChunkerBuf) -> (Range<usize>, usize) {
+        let (_, cut_point) = FastCDC::with_level(buf, MIN_SIZE as u32, AVG_SIZE as u32, MAX_SIZE as u32, NORMALIZATION_LEVEL)
+            .cut(buf.pos, buf.clen - buf.pos);
 
-        // copy source data into chunker buffer
-        let in_len = min(BUFFER_SIZE - self.buf.clen, buf.len());
-        assert!(in_len > 0);
-        self.buf.copy_in(buf, in_len);
+        let chunk_length = cut_point - buf.pos;
+        let write_range = buf.pos..buf.pos + chunk_length;
 
-        while self.buf.has_something() {
-            self.buf.pos -= MIN_SIZE;
+        buf.pos = cut_point;
 
-            let (_, cut_point) = FastCDC::with_level(
-                &*self.buf, // is &* necessary?
-                MIN_SIZE as u32,
-                AVG_SIZE as u32,
-                MAX_SIZE as u32,
-                NORMALIZATION_LEVEL,
-            )
-            .cut(self.buf.pos, self.buf.clen - self.buf.pos);
-
-            self.chunk_len = cut_point - self.buf.pos;
-            self.buf.pos = cut_point;
-
-            // write the chunk to destination writer,
-            // ensure it is consumed in whole
-            let write_range = self.buf.pos - self.chunk_len..self.buf.pos;
-            let written = self.dst.write(&self.buf[write_range])?;
-            assert_eq!(written, self.chunk_len);
-
-            // not enough space in buffer, copy remaining to
-            // the head of buffer and reset buf position
-            if self.buf.pos + MAX_SIZE >= BUFFER_SIZE {
-                self.buf.reset_position();
-            }
-
-            // jump to next start sliding position
-            self.buf.pos += MIN_SIZE;
-            self.chunk_len = MIN_SIZE;
-        }
-
-        Ok(in_len)
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        // flush remaining data to destination
-        let p = self.buf.pos - self.chunk_len;
-        if p < self.buf.clen {
-            self.chunk_len = self.buf.clen - p;
-            let write_range = p..p + self.chunk_len;
-            let _ = self.dst.write(&self.buf[write_range])?;
-        }
-
-        // reset chunker
-        self.buf.pos = MIN_SIZE;
-        self.buf.clen = 0;
-        self.chunk_len = MIN_SIZE;
-
-        self.dst.flush()
+        (write_range, chunk_length)
     }
 }
 
-impl<W: Write + Seek> Debug for FastChunker<W> {
+impl Debug for FastChunker {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Chunker()")
-    }
-}
-
-impl<W: Write + Seek> Seek for FastChunker<W> {
-    fn seek(&mut self, pos: SeekFrom) -> IoResult<u64> {
-        self.dst.seek(pos)
     }
 }
