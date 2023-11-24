@@ -71,7 +71,7 @@ impl Chunking for RabinChunker {
 
 fn find_border(buf: &[u8], params: &ChunkerParams) -> Option<usize> {
     if buf.len() < MIN_SIZE {
-        return Some(buf.len());
+        return None;
     }
 
     let remaining = min(MAX_SIZE, buf.len());

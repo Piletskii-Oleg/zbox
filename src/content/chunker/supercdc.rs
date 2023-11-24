@@ -78,7 +78,7 @@ impl SuperChunker {
 
 fn find_border(buf: &[u8]) -> Option<(u64, usize)> {
     if buf.len() < MIN_CHUNK_SIZE {
-        return Some((0, buf.len()));
+        return None;
     }
 
     let remaining = min(MAX_CHUNK_SIZE, buf.len());

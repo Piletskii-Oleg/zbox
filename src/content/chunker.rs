@@ -63,6 +63,8 @@ impl<W: Write + Seek> Write for Chunker<W> {
                 if self.buffer.pos + MAX_SIZE >= BUFFER_SIZE {
                     self.buffer.reset_position();
                 }
+            } else {
+                break;
             }
         }
 
