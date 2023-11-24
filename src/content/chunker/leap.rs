@@ -1,10 +1,11 @@
 use rand::prelude::{Distribution, ThreadRng};
 use rand_distr::Normal;
-use std::cmp::min;
 use std::fmt::{self, Debug};
-use std::io::{Result as IoResult, Seek, SeekFrom, Write};
+use std::io::Write;
+use std::ops::Range;
 
-use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
+use crate::content::chunker::buffer::ChunkerBuf;
+use crate::content::chunker::Chunking;
 
 // leap-based cdc constants
 const MIN_CHUNK_SIZE: usize = 1024 * 16;
@@ -25,35 +26,24 @@ enum PointStatus {
 }
 
 /// Chunker
-pub struct LeapChunker<W: Write + Seek> {
-    dst: W, // destination writer
+pub struct LeapChunker {
     chunk_len: usize,
     ef_matrix: Vec<Vec<u8>>,
-    buf: ChunkerBuf, // chunker buffer, fixed size: BUFFER_SIZE
 }
 
-impl<W: Write + Seek> LeapChunker<W> {
-    pub fn new(dst: W) -> Self {
-        let ef_matrix = generate_ef_matrix();
-
-        LeapChunker {
-            dst,
-            chunk_len: MIN_CHUNK_SIZE,
-            ef_matrix,
-            buf: ChunkerBuf::new(),
+impl LeapChunker {
+    pub fn new() -> Self {
+        Self {
+            chunk_len: 0,
+            ef_matrix: generate_ef_matrix(),
         }
     }
 
-    pub fn into_inner(mut self) -> IoResult<W> {
-        self.flush()?;
-        Ok(self.dst)
-    }
-
-    fn is_point_satisfied(&self) -> PointStatus {
+    fn is_point_satisfied(&self, buf: &ChunkerBuf) -> PointStatus {
         // primary check, T<=x<M where T is WINDOW_SECONDARY_COUNT and M is WINDOW_COUNT
         for i in WINDOW_SECONDARY_COUNT..WINDOW_COUNT {
             if !self.is_window_qualified(
-                &self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i],
+                &buf[buf.pos - i - WINDOW_SIZE..buf.pos - i],
             ) {
                 // window is WINDOW_SIZE bytes long and moves to the left
                 let leap = WINDOW_COUNT - i;
@@ -64,7 +54,7 @@ impl<W: Write + Seek> LeapChunker<W> {
         //secondary check, 0<=x<T bytes
         for i in 0..WINDOW_SECONDARY_COUNT {
             if !self.is_window_qualified(
-                &self.buf[self.buf.pos - i - WINDOW_SIZE..self.buf.pos - i],
+                &buf[buf.pos - i - WINDOW_SIZE..buf.pos - i],
             ) {
                 let leap = WINDOW_COUNT - WINDOW_SECONDARY_COUNT - i;
                 return PointStatus::Unsatisfied(leap);
@@ -82,79 +72,57 @@ impl<W: Write + Seek> LeapChunker<W> {
             .fold(0, |acc, value| acc ^ (value as usize)) // why is acc of type usize?
             != 0
     }
-
-    fn write_to_dst(&mut self) -> IoResult<usize> {
-        let write_range = self.buf.pos - self.chunk_len..self.buf.pos;
-        let written = self.dst.write(&self.buf[write_range])?;
-        assert_eq!(written, self.chunk_len);
-
-        if self.buf.pos + MAX_CHUNK_SIZE >= BUFFER_SIZE {
-            self.buf.reset_position();
-        }
-
-        self.buf.pos += MIN_CHUNK_SIZE;
-        self.chunk_len = MIN_CHUNK_SIZE;
-        Ok(written)
-    }
 }
 
-impl<W: Write + Seek> Write for LeapChunker<W> {
-    // consume bytes stream, output chunks
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        if buf.is_empty() {
-            return Ok(0);
+impl Chunking for LeapChunker {
+    fn next_write_range(
+        &mut self,
+        buf: &mut ChunkerBuf,
+    ) -> Option<(Range<usize>, usize)> {
+        if buf.clen - buf.pos + self.chunk_len < MIN_CHUNK_SIZE { // TODO: is this correct?
+            let length = buf.clen - buf.pos + self.chunk_len;
+            let write_range = buf.pos - self.chunk_len..buf.clen;
+
+            buf.pos = buf.clen;
+
+            return Some((write_range, length));
         }
 
-        // copy source data into chunker buffer
-        let in_len = min(BUFFER_SIZE - self.buf.clen, buf.len());
-        assert!(in_len > 0);
-        self.buf.copy_in(buf, in_len);
+        if self.chunk_len < MIN_CHUNK_SIZE {
+            buf.pos += MIN_CHUNK_SIZE;
+            self.chunk_len += MIN_CHUNK_SIZE;
+        }
 
-        while self.buf.has_something() {
-            if self.chunk_len >= MAX_CHUNK_SIZE {
-                self.write_to_dst()?;
-            } else {
-                match self.is_point_satisfied() {
-                    PointStatus::Satisfied => {
-                        self.write_to_dst()?;
-                    }
-                    PointStatus::Unsatisfied(leap) => {
-                        self.buf.pos += leap;
-                        self.chunk_len += leap;
-                    }
-                };
+        if self.chunk_len > MAX_CHUNK_SIZE {
+            let write_range = buf.pos - self.chunk_len..buf.pos;
+            let length = self.chunk_len;
+
+            self.chunk_len = 0;
+
+            Some((write_range, length))
+        } else {
+            match self.is_point_satisfied(buf) {
+                PointStatus::Satisfied => {
+                    let write_range = buf.pos - self.chunk_len..buf.pos;
+                    let length = self.chunk_len;
+
+                    self.chunk_len = 0;
+
+                    Some((write_range, length))
+                }
+                PointStatus::Unsatisfied(leap) => {
+                    buf.pos += leap;
+                    self.chunk_len += leap;
+                    None
+                }
             }
         }
-        Ok(in_len)
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        // flush remaining data to destination
-        let p = self.buf.pos - self.chunk_len;
-        if p < self.buf.clen {
-            self.chunk_len = self.buf.clen - p;
-            let write_range = p..p + self.chunk_len;
-            let _ = self.dst.write(&self.buf[write_range])?;
-        }
-
-        // reset chunker
-        self.buf.pos = MIN_CHUNK_SIZE;
-        self.chunk_len = MIN_CHUNK_SIZE;
-        self.buf.clen = 0;
-
-        self.dst.flush()
     }
 }
 
-impl<W: Write + Seek> Debug for LeapChunker<W> {
+impl Debug for LeapChunker {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Chunker()")
-    }
-}
-
-impl<W: Write + Seek> Seek for LeapChunker<W> {
-    fn seek(&mut self, pos: SeekFrom) -> IoResult<u64> {
-        self.dst.seek(pos)
     }
 }
 

@@ -63,9 +63,10 @@ impl UltraChunker {
     }
 
     fn generate_chunk(&mut self, buf: &mut ChunkerBuf) -> Option<usize> {
-        if buf.clen - buf.pos < MIN_CHUNK_SIZE {
+        if buf.clen - buf.pos < MIN_CHUNK_SIZE { // TODO: is this correct?
+            let length = buf.clen - buf.pos;
             buf.pos = buf.clen;
-            return Some(buf.clen - buf.pos);
+            return Some(length);
         }
 
         if self.chunk_len < MIN_CHUNK_SIZE {

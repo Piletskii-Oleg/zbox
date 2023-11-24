@@ -9,7 +9,7 @@ use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
 use std::ops::Range;
-use crate::content::chunker::ultra::UltraChunker;
+use crate::content::chunker::leap::LeapChunker;
 
 const MAX_SIZE: usize = 1024 * 64;
 
@@ -32,7 +32,7 @@ impl<W: Write + Seek> Chunker<W> {
         Self {
             dst,
             buffer: ChunkerBuf::new(),
-            chunker: Box::new(UltraChunker::new()),
+            chunker: Box::new(LeapChunker::new()),
         }
     }
 
