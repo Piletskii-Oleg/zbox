@@ -243,7 +243,7 @@ mod tests {
         }
 
         let root_area =
-            SVGBackend::new("ultra-chart.svg", (600, 400)).into_drawing_area();
+            SVGBackend::new("chart.svg", (600, 400)).into_drawing_area();
         root_area.fill(&WHITE).unwrap();
 
         let mut ctx = ChartBuilder::on(&root_area)
