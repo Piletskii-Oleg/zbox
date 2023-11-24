@@ -2,7 +2,6 @@ use std::cmp::min;
 use rand::prelude::{Distribution, ThreadRng};
 use rand_distr::Normal;
 use std::fmt::{self, Debug};
-use std::io::Write;
 use std::ops::Range;
 
 use crate::content::chunker::buffer::ChunkerBuf;
@@ -176,7 +175,7 @@ fn concatenate_bits((x, y): (&bool, &bool)) -> u8 {
 }
 
 fn transform_byte_row(byte: u8, matrix: &[Vec<f64>]) -> Vec<bool> {
-    let mut new_row = vec![0u8; 5];
+    let mut new_row = [0u8; 5];
     (0..255)
         .map(|index| multiply_rows(byte, &matrix[index]))
         .enumerate()
@@ -188,7 +187,7 @@ fn transform_byte_row(byte: u8, matrix: &[Vec<f64>]) -> Vec<bool> {
 
     new_row
         .iter()
-        .map(|&number| if number % 2 == 0 { false } else { true })
+        .map(|&number| number % 2 != 0)
         .collect::<Vec<bool>>()
 }
 

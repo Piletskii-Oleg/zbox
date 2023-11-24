@@ -1,3 +1,4 @@
+use std::cmp::min;
 use crate::content::chunker::buffer::ChunkerBuf;
 use crate::content::chunker::Chunking;
 use std::ops::Range;
@@ -63,15 +64,10 @@ impl UltraChunker {
     }
 
     fn generate_chunk(&mut self, buf: &mut ChunkerBuf) -> Option<usize> {
-        if buf.clen - buf.pos < MIN_CHUNK_SIZE { // TODO: is this correct?
-            let length = buf.clen - buf.pos;
-            buf.pos = buf.clen;
-            return Some(length);
-        }
-
         if self.chunk_len < MIN_CHUNK_SIZE {
-            buf.pos += 8;
-            self.chunk_len += 8;
+            let add = min(MIN_CHUNK_SIZE, buf.clen - buf.pos);
+            buf.pos += add;
+            self.chunk_len += add;
             return None;
         }
 

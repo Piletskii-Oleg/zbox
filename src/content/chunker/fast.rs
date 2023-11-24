@@ -2,7 +2,6 @@ use crate::content::chunker::buffer::ChunkerBuf;
 use crate::content::chunker::Chunking;
 use fastcdc::v2020::{FastCDC, Normalization};
 use std::fmt::{self, Debug};
-use std::io::Write;
 use std::ops::Range;
 
 const MIN_SIZE: usize = 2 * 1024; // minimal chunk size, 2k
@@ -10,9 +9,6 @@ const AVG_SIZE: usize = 2 * 1024; // average chunk size, 2k
 const MAX_SIZE: usize = 32 * 1024; // maximum chunk size, 32k
 
 const NORMALIZATION_LEVEL: Normalization = Normalization::Level2;
-
-// writer buffer length
-const BUFFER_SIZE: usize = 8 * MAX_SIZE;
 
 pub(super) struct FastChunker;
 

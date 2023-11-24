@@ -44,9 +44,7 @@ impl ChunkerBuf {
         let in_len = min(BUFFER_SIZE - self.clen, buf.len());
         assert!(in_len > 0);
 
-        let copy_range = self.clen..self.clen + in_len;
-        self.buf[copy_range].copy_from_slice(&buf[..in_len]);
-        self.clen += in_len;
+        self.copy_in(buf, in_len);
 
         in_len
     }

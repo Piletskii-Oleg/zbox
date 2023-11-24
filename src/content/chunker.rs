@@ -71,7 +71,7 @@ impl<W: Write + Seek> Write for Chunker<W> {
 
     fn flush(&mut self) -> IoResult<()> {
         if self.buffer.pos < self.buffer.clen {
-            let write_range = self.chunker.remaining_range(&mut self.buffer);
+            let write_range = self.chunker.remaining_range(&self.buffer);
             let _ = self.dst.write(&self.buffer[write_range])?;
         }
 

@@ -3,7 +3,6 @@ use crate::content::chunker::Chunking;
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::fmt::{self, Debug};
-use std::io::Write;
 use std::ops::Range;
 
 // taken from pcompress implementation
@@ -41,7 +40,7 @@ struct ChunkerParams {
 }
 
 impl RabinChunker {
-    pub(super) fn new() -> RabinChunker {
+    pub fn new() -> RabinChunker {
         RabinChunker {
             params: ChunkerParams::new(),
         }
