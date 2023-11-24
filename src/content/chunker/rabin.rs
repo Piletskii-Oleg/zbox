@@ -1,10 +1,10 @@
-use crate::content::chunker::buffer::{ChunkerBuf};
+use crate::content::chunker::buffer::ChunkerBuf;
+use crate::content::chunker::Chunking;
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::fmt::{self, Debug};
-use std::io::{Write};
+use std::io::Write;
 use std::ops::Range;
-use crate::content::chunker::Chunking;
 
 // taken from pcompress implementation
 // https://github.com/moinakg/pcompress
@@ -49,21 +49,26 @@ impl RabinChunker {
 }
 
 impl Chunking for RabinChunker {
-    fn next_write_range(&mut self, buf: &mut ChunkerBuf) -> (Range<usize>, usize) {
+    fn next_write_range(
+        &mut self,
+        buf: &mut ChunkerBuf,
+    ) -> Option<(Range<usize>, usize)> {
         let search_range = buf.pos..buf.clen;
-        let length = find_border(&buf[search_range], &self.params);
+        if let Some(length) = find_border(&buf[search_range], &self.params) {
+            let write_range = buf.pos..buf.pos + length;
 
-        let write_range = buf.pos..buf.pos + length;
+            buf.pos += length;
 
-        buf.pos += length;
-
-        (write_range, length)
+            Some((write_range, length))
+        } else {
+            None
+        }
     }
 }
 
-fn find_border(buf: &[u8], params: &ChunkerParams) -> usize {
+fn find_border(buf: &[u8], params: &ChunkerParams) -> Option<usize> {
     if buf.len() < MIN_SIZE {
-        return buf.len();
+        return Some(buf.len());
     }
 
     let remaining = min(MAX_SIZE, buf.len());
@@ -95,12 +100,12 @@ fn find_border(buf: &[u8], params: &ChunkerParams) -> usize {
             let chksum = roll_hash ^ params.ir[out];
 
             if (chksum & CUT_MASK) == 0 || chunk_len >= MAX_SIZE {
-                return chunk_len;
+                return Some(chunk_len);
             }
         }
     }
 
-    chunk_len
+    None
 }
 
 impl ChunkerParams {

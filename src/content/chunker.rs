@@ -6,10 +6,10 @@ mod supercdc;
 mod ultra;
 
 use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
-use crate::content::chunker::supercdc::SuperChunker;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
 use std::ops::Range;
+use crate::content::chunker::ultra::UltraChunker;
 
 const MAX_SIZE: usize = 1024 * 64;
 
@@ -17,7 +17,7 @@ trait Chunking {
     fn next_write_range(
         &mut self,
         buf: &mut ChunkerBuf,
-    ) -> (Range<usize>, usize);
+    ) -> Option<(Range<usize>, usize)>;
 }
 
 /// Chunker
@@ -32,7 +32,7 @@ impl<W: Write + Seek> Chunker<W> {
         Self {
             dst,
             buffer: ChunkerBuf::new(),
-            chunker: Box::new(SuperChunker::new()),
+            chunker: Box::new(UltraChunker::new()),
         }
     }
 
@@ -52,13 +52,15 @@ impl<W: Write + Seek> Write for Chunker<W> {
         let in_len = self.buffer.append(buf);
 
         while self.buffer.has_something() {
-            let (write_range, chunk_length) =
-                self.chunker.next_write_range(&mut self.buffer);
-            let written = self.dst.write(&self.buffer[write_range])?;
-            assert_eq!(written, chunk_length);
+            if let Some((write_range, chunk_length)) =
+                self.chunker.next_write_range(&mut self.buffer)
+            {
+                let written = self.dst.write(&self.buffer[write_range])?;
+                assert_eq!(written, chunk_length);
 
-            if self.buffer.pos + MAX_SIZE >= BUFFER_SIZE {
-                self.buffer.reset_position();
+                if self.buffer.pos + MAX_SIZE >= BUFFER_SIZE {
+                    self.buffer.reset_position();
+                }
             }
         }
 

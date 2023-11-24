@@ -1,4 +1,4 @@
-use crate::content::chunker::buffer::{ChunkerBuf};
+use crate::content::chunker::buffer::ChunkerBuf;
 use crate::content::chunker::Chunking;
 use std::cmp::min;
 use std::collections::HashMap;
@@ -27,15 +27,17 @@ impl Chunking for SuperChunker {
     fn next_write_range(
         &mut self,
         buf: &mut ChunkerBuf,
-    ) -> (Range<usize>, usize) {
+    ) -> Option<(Range<usize>, usize)> {
         let search_range = buf.pos..buf.clen;
-        let (_, length) = find_border(&buf[search_range]);
+        if let Some((_, length)) = find_border(&buf[search_range]) {
+            let write_range = buf.pos..buf.pos + length;
 
-        let write_range = buf.pos..buf.pos + length;
+            buf.pos += length;
 
-        buf.pos += length;
-
-        (write_range, length)
+            Some((write_range, length))
+        } else {
+            None
+        }
     }
 }
 
@@ -70,9 +72,9 @@ impl SuperChunker {
     // }
 }
 
-fn find_border(buf: &[u8]) -> (u64, usize) {
+fn find_border(buf: &[u8]) -> Option<(u64, usize)> {
     if buf.len() < MIN_CHUNK_SIZE {
-        return (0, buf.len());
+        return Some((0, buf.len()));
     }
 
     let remaining = min(MAX_CHUNK_SIZE, buf.len());
@@ -98,12 +100,12 @@ fn find_border(buf: &[u8]) -> (u64, usize) {
         gear = GEAR_LS[buf[a] as usize];
         fingerprint = (fingerprint << 2).wrapping_add(gear);
         if fingerprint & MASK_S_LS == 0 {
-            return (gear, a);
+            return Some((gear, a));
         }
         gear = GEAR[buf[a + 1] as usize];
         fingerprint = fingerprint.wrapping_add(gear);
         if fingerprint & MASK_S == 0 {
-            return (gear, a + 1);
+            return Some((gear, a + 1));
         }
         pos += 1;
     }
@@ -113,7 +115,7 @@ fn find_border(buf: &[u8]) -> (u64, usize) {
         gear = GEAR_LS[buf[a] as usize];
         fingerprint = (fingerprint << 2).wrapping_add(gear);
         if fingerprint & MASK_L_LS == 0 {
-            return (gear, a);
+            return Some((gear, a));
         }
         if !breakpoint_flag && fingerprint & MASK_B_LS == 0 {
             breakpoint_flag = true;
@@ -124,7 +126,7 @@ fn find_border(buf: &[u8]) -> (u64, usize) {
         gear = GEAR[buf[a + 1] as usize];
         fingerprint = fingerprint.wrapping_add(gear);
         if fingerprint & MASK_L == 0 {
-            return (gear, a + 1);
+            return Some((gear, a + 1));
         }
         if !breakpoint_flag && fingerprint & MASK_B == 0 {
             breakpoint_flag = true;
@@ -134,7 +136,11 @@ fn find_border(buf: &[u8]) -> (u64, usize) {
         pos += 1;
     }
 
-    (breakpoint_gear, breakpoint)
+    if pos == remaining / 2 {
+        return Some((breakpoint_gear, breakpoint));
+    }
+
+    None
 }
 
 // Gear table taken from https://github.com/nlfiedler/fastcdc-rs
