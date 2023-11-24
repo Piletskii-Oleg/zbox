@@ -155,4 +155,8 @@ impl Chunking for UltraChunker {
             None
         }
     }
+
+    fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
+        buf.pos - self.chunk_len..buf.clen
+    }
 }

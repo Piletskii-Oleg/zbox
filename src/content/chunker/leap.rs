@@ -1,3 +1,4 @@
+use std::cmp::min;
 use rand::prelude::{Distribution, ThreadRng};
 use rand_distr::Normal;
 use std::fmt::{self, Debug};
@@ -40,8 +41,11 @@ impl LeapChunker {
     }
 
     fn is_point_satisfied(&self, buf: &ChunkerBuf) -> PointStatus {
+        let lower_bound = min(WINDOW_SECONDARY_COUNT, buf.clen-buf.pos);
+        let upper_bound = min(WINDOW_COUNT, buf.clen - buf.pos);
+
         // primary check, T<=x<M where T is WINDOW_SECONDARY_COUNT and M is WINDOW_COUNT
-        for i in WINDOW_SECONDARY_COUNT..WINDOW_COUNT {
+        for i in lower_bound..upper_bound {
             if !self.is_window_qualified(
                 &buf[buf.pos - i - WINDOW_SIZE..buf.pos - i],
             ) {
@@ -52,7 +56,7 @@ impl LeapChunker {
         }
 
         //secondary check, 0<=x<T bytes
-        for i in 0..WINDOW_SECONDARY_COUNT {
+        for i in 0..lower_bound {
             if !self.is_window_qualified(
                 &buf[buf.pos - i - WINDOW_SIZE..buf.pos - i],
             ) {
@@ -79,18 +83,11 @@ impl Chunking for LeapChunker {
         &mut self,
         buf: &mut ChunkerBuf,
     ) -> Option<(Range<usize>, usize)> {
-        if buf.clen - buf.pos + self.chunk_len < MIN_CHUNK_SIZE { // TODO: is this correct?
-            let length = buf.clen - buf.pos + self.chunk_len;
-            let write_range = buf.pos - self.chunk_len..buf.clen;
-
-            buf.pos = buf.clen;
-
-            return Some((write_range, length));
-        }
-
         if self.chunk_len < MIN_CHUNK_SIZE {
-            buf.pos += MIN_CHUNK_SIZE;
-            self.chunk_len += MIN_CHUNK_SIZE;
+            let add = min(MIN_CHUNK_SIZE, buf.clen - buf.pos);
+            buf.pos += add;
+            self.chunk_len += add;
+            return None;
         }
 
         if self.chunk_len > MAX_CHUNK_SIZE {
@@ -117,6 +114,10 @@ impl Chunking for LeapChunker {
                 }
             }
         }
+    }
+
+    fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
+        buf.pos - self.chunk_len..buf.clen
     }
 }
 

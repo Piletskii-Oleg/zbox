@@ -18,6 +18,8 @@ trait Chunking {
         &mut self,
         buf: &mut ChunkerBuf,
     ) -> Option<(Range<usize>, usize)>;
+
+    fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize>;
 }
 
 /// Chunker
@@ -69,7 +71,7 @@ impl<W: Write + Seek> Write for Chunker<W> {
 
     fn flush(&mut self) -> IoResult<()> {
         if self.buffer.pos < self.buffer.clen {
-            let write_range = self.buffer.pos..self.buffer.clen;
+            let write_range = self.chunker.remaining_range(&mut self.buffer);
             let _ = self.dst.write(&self.buffer[write_range])?;
         }
 

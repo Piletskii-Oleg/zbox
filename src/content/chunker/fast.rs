@@ -43,6 +43,10 @@ impl Chunking for FastChunker {
 
         Some((write_range, chunk_length))
     }
+
+    fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
+        buf.pos..buf.clen
+    }
 }
 
 impl Debug for FastChunker {

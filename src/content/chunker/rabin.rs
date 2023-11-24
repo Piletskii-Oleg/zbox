@@ -64,6 +64,10 @@ impl Chunking for RabinChunker {
             None
         }
     }
+
+    fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
+        buf.pos..buf.clen
+    }
 }
 
 fn find_border(buf: &[u8], params: &ChunkerParams) -> Option<usize> {
