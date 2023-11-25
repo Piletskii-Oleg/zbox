@@ -1,6 +1,6 @@
-use std::cmp::min;
 use rand::prelude::{Distribution, ThreadRng};
 use rand_distr::Normal;
+use std::cmp::min;
 use std::fmt::{self, Debug};
 use std::ops::Range;
 
@@ -40,7 +40,7 @@ impl LeapChunker {
     }
 
     fn is_point_satisfied(&self, buf: &ChunkerBuf) -> PointStatus {
-        let lower_bound = min(WINDOW_SECONDARY_COUNT, buf.clen-buf.pos);
+        let lower_bound = min(WINDOW_SECONDARY_COUNT, buf.clen - buf.pos);
         let upper_bound = min(WINDOW_COUNT, buf.clen - buf.pos);
 
         // primary check, T<=x<M where T is WINDOW_SECONDARY_COUNT and M is WINDOW_COUNT
@@ -122,7 +122,7 @@ impl Chunking for LeapChunker {
 
 impl Debug for LeapChunker {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Chunker()")
+        write!(f, "LeapChunker()")
     }
 }
 

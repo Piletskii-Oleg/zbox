@@ -1,6 +1,8 @@
-use std::cmp::min;
 use crate::content::chunker::buffer::ChunkerBuf;
 use crate::content::chunker::Chunking;
+use std::cmp::min;
+use std::fmt;
+use std::fmt::Debug;
 use std::ops::Range;
 
 const KB: usize = 1024;
@@ -154,5 +156,11 @@ impl Chunking for UltraChunker {
 
     fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
         buf.pos - self.chunk_len..buf.clen
+    }
+}
+
+impl Debug for UltraChunker {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "UltraChunker()")
     }
 }

@@ -111,6 +111,12 @@ fn find_border(buf: &[u8], params: &ChunkerParams) -> Option<usize> {
     None
 }
 
+impl Debug for RabinChunker {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "RabinChunker()")
+    }
+}
+
 impl ChunkerParams {
     fn new() -> Self {
         let mut cp = ChunkerParams::default();

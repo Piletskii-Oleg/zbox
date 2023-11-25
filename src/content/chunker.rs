@@ -6,10 +6,10 @@ mod supercdc;
 mod ultra;
 
 use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
+use crate::content::chunker::leap::LeapChunker;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
 use std::ops::Range;
-use crate::content::chunker::leap::LeapChunker;
 
 const MAX_SIZE: usize = 1024 * 64;
 
@@ -41,6 +41,14 @@ impl<W: Write + Seek> Chunker<W> {
     pub fn into_inner(mut self) -> IoResult<W> {
         self.flush()?;
         Ok(self.dst)
+    }
+
+    fn with_chunker(dst: W, chunker: Box<dyn Chunking>) -> Self {
+        Self {
+            dst,
+            buffer: ChunkerBuf::new(),
+            chunker
+        }
     }
 }
 
@@ -107,10 +115,14 @@ mod tests {
     use crate::base::init_env;
     use crate::base::utils::speed_str;
     use crate::content::chunk::Chunk;
+    use crate::content::chunker::fast::FastChunker;
+    use crate::content::chunker::rabin::RabinChunker;
+    use crate::content::chunker::supercdc::SuperChunker;
+    use crate::content::chunker::ultra::UltraChunker;
 
     const MIN_CHUNK_SIZE: usize = 2048;
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct Sinker {
         len: usize,
         chks: Vec<Chunk>,
@@ -144,7 +156,7 @@ mod tests {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct VoidSinker {}
 
     impl Write for VoidSinker {
@@ -169,20 +181,31 @@ mod tests {
 
         // perpare test data
         const DATA_LEN: usize = 765 * 1024;
-        let mut data = vec![0u8; DATA_LEN];
-        Crypto::random_buf(&mut data);
-        let mut cur = Cursor::new(data);
-        let sinker = Sinker {
-            len: 0,
-            chks: Vec::new(),
-        };
 
-        // test chunker
-        let mut ckr = Chunker::new(sinker);
-        let result = copy(&mut cur, &mut ckr);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), DATA_LEN as u64);
-        ckr.flush().unwrap();
+        let inner_chunkers: Vec<Box<dyn Chunking>> = vec![
+            Box::new(RabinChunker::new()),
+            Box::new(FastChunker::new()),
+            Box::new(LeapChunker::new()),
+            Box::new(SuperChunker::new()),
+            Box::new(UltraChunker::new()),
+        ];
+
+        for (index, chunker) in inner_chunkers.into_iter().enumerate() {
+            let mut data = vec![0u8; DATA_LEN];
+            Crypto::random_buf(&mut data);
+            let mut cur = Cursor::new(data);
+            let sinker = Sinker {
+                len: 0,
+                chks: Vec::new(),
+            };
+
+            println!("{}", index);
+            let mut ckr = Chunker::with_chunker(sinker, chunker);
+            let result = copy(&mut cur, &mut ckr);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), DATA_LEN as u64);
+            ckr.flush().unwrap();
+        }
     }
 
     #[test]

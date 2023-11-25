@@ -2,6 +2,8 @@ use crate::content::chunker::buffer::ChunkerBuf;
 use crate::content::chunker::Chunking;
 use std::cmp::min;
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::Debug;
 use std::ops::Range;
 
 const MIN_CHUNK_SIZE: usize = 1024 * 4;
@@ -42,6 +44,12 @@ impl Chunking for SuperChunker {
 
     fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
         buf.pos..buf.clen
+    }
+}
+
+impl Debug for SuperChunker {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "SuperChunker()")
     }
 }
 
