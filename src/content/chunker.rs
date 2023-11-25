@@ -15,7 +15,7 @@ const MAX_SIZE: usize = 1024 * 64;
 
 /// Trait that should be implemented by all chunking algorithm implementations that
 /// are to be used with the Zbox chunker.
-trait Chunking {
+trait Chunking: Debug {
     /// Advances the buffer position and finds the next chunking cut-point, returning a range in the `buf`
     /// which corresponds to the found chunk.
     ///
@@ -198,21 +198,25 @@ mod tests {
         }
     }
 
+    fn inner_chunkers() -> Vec<Box<dyn Chunking>> {
+        vec![
+            Box::new(RabinChunker::new()),
+            Box::new(FastChunker::new()),
+            Box::new(SuperChunker::new()),
+            Box::new(UltraChunker::new()),
+            Box::new(LeapChunker::new()),
+        ]
+    }
+
     #[test]
     fn chunker() {
         init_env();
 
         const DATA_LEN: usize = 765 * 1024;
 
-        let inner_chunkers: Vec<Box<dyn Chunking>> = vec![
-            Box::new(RabinChunker::new()),
-            Box::new(FastChunker::new()),
-            Box::new(SuperChunker::new()),
-            Box::new(UltraChunker::new()),
-            Box::new(LeapChunker::new()),
-        ];
+        for chunker in inner_chunkers().into_iter() {
+            let chunker_name = format!("{:?}", chunker);
 
-        for (index, chunker) in inner_chunkers.into_iter().enumerate() {
             let mut data = vec![0u8; DATA_LEN];
             Crypto::random_buf(&mut data);
             let mut cur = Cursor::new(data);
@@ -221,12 +225,13 @@ mod tests {
                 chks: Vec::new(),
             };
 
-            println!("{}", index);
             let mut ckr = Chunker::with_chunker(sinker, chunker);
             let result = copy(&mut cur, &mut ckr);
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), DATA_LEN as u64);
             ckr.flush().unwrap();
+
+            println!("{} - OK", chunker_name);
         }
     }
 
@@ -234,22 +239,26 @@ mod tests {
     fn chunker_perf() {
         init_env();
 
-        // perpare test data
         const DATA_LEN: usize = 100 * 1024 * 1024;
-        let mut data = vec![0u8; DATA_LEN];
-        let seed = RandomSeed::from(&[0u8; RANDOM_SEED_SIZE]);
-        Crypto::random_buf_deterministic(&mut data, &seed);
-        let mut cur = Cursor::new(data);
-        let sinker = VoidSinker {};
 
-        // test chunker performance
-        let mut ckr = Chunker::new(sinker);
-        let now = Instant::now();
-        copy(&mut cur, &mut ckr).unwrap();
-        ckr.flush().unwrap();
-        let time = now.elapsed();
+        for chunker in inner_chunkers() {
+            let chunker_name = format!("{:?}", chunker);
 
-        println!("Chunker perf: {}", speed_str(&time, DATA_LEN));
+            let mut data = vec![0u8; DATA_LEN];
+            let seed = RandomSeed::from(&[0u8; RANDOM_SEED_SIZE]);
+            Crypto::random_buf_deterministic(&mut data, &seed);
+            let mut cur = Cursor::new(data);
+            let sinker = VoidSinker {};
+
+            // test chunker performance
+            let mut ckr = Chunker::with_chunker(sinker, chunker);
+            let now = Instant::now();
+            copy(&mut cur, &mut ckr).unwrap();
+            ckr.flush().unwrap();
+            let time = now.elapsed();
+
+            println!("{} perf: {}", chunker_name, speed_str(&time, DATA_LEN));
+        }
     }
 
     #[test]

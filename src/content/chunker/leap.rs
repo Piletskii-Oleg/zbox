@@ -112,7 +112,7 @@ impl Chunking for LeapChunker {
 
 impl Debug for LeapChunker {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "LeapChunker()")
+        write!(f, "LeapChunker")
     }
 }
 
