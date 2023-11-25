@@ -42,10 +42,6 @@ impl Chunking for SuperChunker {
             None
         }
     }
-
-    fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
-        buf.pos..buf.clen
-    }
 }
 
 impl Debug for SuperChunker {

@@ -39,10 +39,6 @@ impl Chunking for FastChunker {
 
         Some(write_range)
     }
-
-    fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
-        buf.pos..buf.clen
-    }
 }
 
 impl Debug for FastChunker {
