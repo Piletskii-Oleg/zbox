@@ -89,6 +89,7 @@ impl<W: Write + Seek> Write for Chunker<W> {
 
         self.buffer.pos = 0;
         self.buffer.clen = 0;
+        self.buffer.chunk_len = 0;
 
         self.dst.flush()
     }
