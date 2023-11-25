@@ -64,7 +64,7 @@ impl<W: Write + Seek> Chunker<W> {
         Self {
             dst,
             buffer: ChunkerBuf::new(),
-            chunker
+            chunker,
         }
     }
 }
@@ -92,7 +92,7 @@ impl<W: Write + Seek> Write for Chunker<W> {
                 if self.buffer.pos + MAX_SIZE >= BUFFER_SIZE {
                     self.buffer.reset_position();
                 }
-            } else if self.buffer.clen - self.buffer.pos + self.buffer.chunk_len < MAX_SIZE {
+            } else if self.buffer.possible_size() < MAX_SIZE {
                 break;
             }
         }
@@ -101,7 +101,8 @@ impl<W: Write + Seek> Write for Chunker<W> {
     }
 
     fn flush(&mut self) -> IoResult<()> {
-        let remaining_range = self.buffer.pos - self.buffer.chunk_len..self.buffer.clen;
+        let remaining_range =
+            self.buffer.pos - self.buffer.chunk_len..self.buffer.clen;
         if remaining_range.len() > 0 {
             let _ = self.dst.write(&self.buffer[remaining_range])?;
         }
