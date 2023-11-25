@@ -145,9 +145,6 @@ impl Chunking for UltraChunker {
     ) -> Option<Range<usize>> {
         if let Some(length) = self.generate_chunk(buf) {
             let write_range = buf.pos - length..buf.pos;
-
-            buf.chunk_len = 0;
-
             Some(write_range)
         } else {
             None

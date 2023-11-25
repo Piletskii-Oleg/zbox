@@ -181,10 +181,13 @@ mod tests {
     fn chunker() {
         init_env();
 
-        // perpare test data
         const DATA_LEN: usize = 765 * 1024;
 
         let inner_chunkers: Vec<Box<dyn Chunking>> = vec![
+            Box::new(RabinChunker::new()),
+            Box::new(FastChunker::new()),
+            Box::new(SuperChunker::new()),
+            Box::new(UltraChunker::new()),
             Box::new(LeapChunker::new()),
         ];
 

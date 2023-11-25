@@ -35,6 +35,7 @@ impl Chunking for SuperChunker {
             let write_range = buf.pos..buf.pos + length;
 
             buf.pos += length;
+            buf.chunk_len = length;
 
             Some(write_range)
         } else {
