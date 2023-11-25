@@ -13,7 +13,26 @@ use std::ops::Range;
 
 const MAX_SIZE: usize = 1024 * 64;
 
+/// Trait that should be implemented by all chunking algorithm implementations that
+/// are to be used with the Zbox chunker.
 trait Chunking {
+    /// Advances the buffer position and finds the next chunking cut-point, returning a range in the `buf`
+    /// which corresponds to the found chunk.
+    ///
+    /// # Constraints
+    /// After the method has been called, the following constraints must be held:
+    ///
+    /// Buffer's field `chunk_len` must be equal to the resulting range's length
+    ///
+    /// Buffer's field `pos` must be equal to the range's end-point
+    /// # Return
+    /// `None` should be returned if the found chunk length is less than minimum, or if buffer's end-point has been reached but no chunk was found,
+    /// because buffer will be filled with more data at the next iteration, unless it is the end of file. In that case chunking will be done automatically.
+    ///
+    /// Otherwise Some(range) should be returned.
+    /// # Buffer
+    /// This method takes `buf` as a parameter because it must be instantiated in the Zbox chunker and not in the algorithm implementation
+    /// for it to be possible to easily use different algorithms.
     fn next_write_range(
         &mut self,
         buf: &mut ChunkerBuf,
@@ -63,6 +82,8 @@ impl<W: Write + Seek> Write for Chunker<W> {
             if let Some(write_range) =
                 self.chunker.next_write_range(&mut self.buffer)
             {
+                assert_eq!(write_range.end, self.buffer.pos);
+
                 let written = self.dst.write(&self.buffer[write_range])?;
                 assert_eq!(written, self.buffer.chunk_len);
 
