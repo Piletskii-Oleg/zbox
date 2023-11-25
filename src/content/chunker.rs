@@ -15,6 +15,8 @@ const MAX_SIZE: usize = 1024 * 64;
 
 /// Trait that should be implemented by all chunking algorithm implementations that
 /// are to be used with the Zbox chunker.
+///
+/// Debug implementation should contain at least minimal information about the used algorithm.
 trait Chunking: Debug {
     /// Advances the buffer position and finds the next chunking cut-point, returning a range in the `buf`
     /// which corresponds to the found chunk.
@@ -103,7 +105,7 @@ impl<W: Write + Seek> Write for Chunker<W> {
     fn flush(&mut self) -> IoResult<()> {
         let remaining_range =
             self.buffer.pos - self.buffer.chunk_len..self.buffer.clen;
-        if remaining_range.len() > 0 {
+        if !remaining_range.is_empty() {
             let _ = self.dst.write(&self.buffer[remaining_range])?;
         }
 
