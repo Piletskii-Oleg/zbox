@@ -29,14 +29,14 @@ impl Chunking for SuperChunker {
     fn next_write_range(
         &mut self,
         buf: &mut ChunkerBuf,
-    ) -> Option<(Range<usize>, usize)> {
+    ) -> Option<Range<usize>> {
         let search_range = buf.pos..buf.clen;
         if let Some((_, length)) = find_border(&buf[search_range]) {
             let write_range = buf.pos..buf.pos + length;
 
             buf.pos += length;
 
-            Some((write_range, length))
+            Some(write_range)
         } else {
             None
         }

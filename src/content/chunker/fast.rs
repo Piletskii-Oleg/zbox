@@ -22,7 +22,7 @@ impl Chunking for FastChunker {
     fn next_write_range(
         &mut self,
         buf: &mut ChunkerBuf,
-    ) -> Option<(Range<usize>, usize)> {
+    ) -> Option<Range<usize>> {
         let (_, cut_point) = FastCDC::with_level(
             buf,
             MIN_SIZE as u32,
@@ -32,12 +32,12 @@ impl Chunking for FastChunker {
         )
         .cut(buf.pos, buf.clen - buf.pos);
 
-        let chunk_length = cut_point - buf.pos;
-        let write_range = buf.pos..buf.pos + chunk_length;
+        buf.chunk_len = cut_point - buf.pos;
+        let write_range = buf.pos..buf.pos + buf.chunk_len;
 
         buf.pos = cut_point;
 
-        Some((write_range, chunk_length))
+        Some(write_range)
     }
 
     fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {

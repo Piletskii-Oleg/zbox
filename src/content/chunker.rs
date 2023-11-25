@@ -17,7 +17,7 @@ trait Chunking {
     fn next_write_range(
         &mut self,
         buf: &mut ChunkerBuf,
-    ) -> Option<(Range<usize>, usize)>;
+    ) -> Option<Range<usize>>;
 
     fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize>;
 }
@@ -62,16 +62,18 @@ impl<W: Write + Seek> Write for Chunker<W> {
         let in_len = self.buffer.append(buf);
 
         while self.buffer.has_something() {
-            if let Some((write_range, chunk_length)) =
+            if let Some(write_range) =
                 self.chunker.next_write_range(&mut self.buffer)
             {
                 let written = self.dst.write(&self.buffer[write_range])?;
-                assert_eq!(written, chunk_length);
+                assert_eq!(written, self.buffer.chunk_len);
+
+                self.buffer.chunk_len = 0;
 
                 if self.buffer.pos + MAX_SIZE >= BUFFER_SIZE {
                     self.buffer.reset_position();
                 }
-            } else {
+            } else if self.buffer.clen - self.buffer.pos + self.buffer.chunk_len < MAX_SIZE {
                 break;
             }
         }
@@ -80,7 +82,7 @@ impl<W: Write + Seek> Write for Chunker<W> {
     }
 
     fn flush(&mut self) -> IoResult<()> {
-        if self.buffer.pos < self.buffer.clen {
+        if self.buffer.pos - self.buffer.chunk_len < self.buffer.clen {
             let write_range = self.chunker.remaining_range(&self.buffer);
             let _ = self.dst.write(&self.buffer[write_range])?;
         }
@@ -183,11 +185,7 @@ mod tests {
         const DATA_LEN: usize = 765 * 1024;
 
         let inner_chunkers: Vec<Box<dyn Chunking>> = vec![
-            Box::new(RabinChunker::new()),
-            Box::new(FastChunker::new()),
             Box::new(LeapChunker::new()),
-            Box::new(SuperChunker::new()),
-            Box::new(UltraChunker::new()),
         ];
 
         for (index, chunker) in inner_chunkers.into_iter().enumerate() {

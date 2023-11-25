@@ -66,17 +66,17 @@ impl UltraChunker {
     }
 
     fn generate_chunk(&mut self, buf: &mut ChunkerBuf) -> Option<usize> {
-        if self.chunk_len < MIN_CHUNK_SIZE {
+        if buf.chunk_len < MIN_CHUNK_SIZE {
             let add = min(MIN_CHUNK_SIZE, buf.clen - buf.pos);
             buf.pos += add;
-            self.chunk_len += add;
+            buf.chunk_len += add;
             return None;
         }
 
         let out_range = buf.pos..buf.pos + 8;
         self.out_window.copy_from_slice(&buf[out_range]);
         buf.pos += 8;
-        self.chunk_len += 8;
+        buf.chunk_len += 8;
         self.calculate_new_distance();
 
         if let Some(result) = self.try_get_chunk(buf, NORMAL_CHUNK_SIZE, MASK_S)
@@ -88,8 +88,8 @@ impl UltraChunker {
             return Some(result);
         }
 
-        if self.chunk_len >= MAX_CHUNK_SIZE {
-            return Some(self.chunk_len);
+        if buf.chunk_len >= MAX_CHUNK_SIZE {
+            return Some(buf.chunk_len);
         }
 
         None
@@ -101,7 +101,7 @@ impl UltraChunker {
         size_limit: usize,
         mask: usize,
     ) -> Option<usize> {
-        while self.chunk_len < size_limit {
+        while buf.chunk_len < size_limit {
             if buf.pos + 8 > buf.clen {
                 return None;
             }
@@ -112,12 +112,12 @@ impl UltraChunker {
             if self.in_window == self.out_window {
                 self.equal_window_count += 1;
                 if self.equal_window_count == LEST {
-                    self.chunk_len += 8;
+                    buf.chunk_len += 8;
                     buf.pos += 8;
-                    return Some(self.chunk_len);
+                    return Some(buf.chunk_len);
                 } else {
                     buf.pos += 8;
-                    self.chunk_len += 8;
+                    buf.chunk_len += 8;
                     continue;
                 }
             }
@@ -125,14 +125,14 @@ impl UltraChunker {
             self.equal_window_count = 0;
             for j in 0..8 {
                 if (self.distance & mask) == 0 {
-                    return Some(self.chunk_len);
+                    return Some(buf.chunk_len);
                 }
                 self.slide_one_byte(j);
             }
 
             self.out_window.copy_from_slice(&self.in_window);
             buf.pos += 8;
-            self.chunk_len += 8;
+            buf.chunk_len += 8;
         }
         None
     }
@@ -142,20 +142,20 @@ impl Chunking for UltraChunker {
     fn next_write_range(
         &mut self,
         buf: &mut ChunkerBuf,
-    ) -> Option<(Range<usize>, usize)> {
+    ) -> Option<Range<usize>> {
         if let Some(length) = self.generate_chunk(buf) {
             let write_range = buf.pos - length..buf.pos;
 
-            self.chunk_len = 0;
+            buf.chunk_len = 0;
 
-            Some((write_range, length))
+            Some(write_range)
         } else {
             None
         }
     }
 
     fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
-        buf.pos - self.chunk_len..buf.clen
+        buf.pos - buf.chunk_len..buf.clen
     }
 }
 

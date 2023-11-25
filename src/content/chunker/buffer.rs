@@ -7,6 +7,7 @@ pub(super) struct ChunkerBuf {
     pub(super) pos: usize,
     pub(super) clen: usize,
     buf: Vec<u8>, // chunker buffer, fixed size: WTR_BUF_LEN
+    pub(super) chunk_len: usize,
 }
 
 impl ChunkerBuf {
@@ -18,6 +19,7 @@ impl ChunkerBuf {
             pos: 0,
             clen: 0,
             buf,
+            chunk_len: 0
         }
     }
 

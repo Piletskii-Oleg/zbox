@@ -51,14 +51,14 @@ impl Chunking for RabinChunker {
     fn next_write_range(
         &mut self,
         buf: &mut ChunkerBuf,
-    ) -> Option<(Range<usize>, usize)> {
+    ) -> Option<Range<usize>> {
         let search_range = buf.pos..buf.clen;
         if let Some(length) = find_border(&buf[search_range], &self.params) {
             let write_range = buf.pos..buf.pos + length;
 
             buf.pos += length;
 
-            Some((write_range, length))
+            Some(write_range)
         } else {
             None
         }

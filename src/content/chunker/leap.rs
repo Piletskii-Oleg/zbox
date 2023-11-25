@@ -81,34 +81,28 @@ impl Chunking for LeapChunker {
     fn next_write_range(
         &mut self,
         buf: &mut ChunkerBuf,
-    ) -> Option<(Range<usize>, usize)> {
-        if self.chunk_len < MIN_CHUNK_SIZE {
+    ) -> Option<Range<usize>> {
+        if buf.chunk_len < MIN_CHUNK_SIZE {
             let add = min(MIN_CHUNK_SIZE, buf.clen - buf.pos);
             buf.pos += add;
-            self.chunk_len += add;
+            buf.chunk_len += add;
             return None;
         }
 
-        if self.chunk_len > MAX_CHUNK_SIZE {
-            let write_range = buf.pos - self.chunk_len..buf.pos;
-            let length = self.chunk_len;
+        if buf.chunk_len > MAX_CHUNK_SIZE {
+            let write_range = buf.pos - buf.chunk_len..buf.pos;
 
-            self.chunk_len = 0;
-
-            Some((write_range, length))
+            Some(write_range)
         } else {
             match self.is_point_satisfied(buf) {
                 PointStatus::Satisfied => {
-                    let write_range = buf.pos - self.chunk_len..buf.pos;
-                    let length = self.chunk_len;
+                    let write_range = buf.pos - buf.chunk_len..buf.pos;
 
-                    self.chunk_len = 0;
-
-                    Some((write_range, length))
+                    Some(write_range)
                 }
                 PointStatus::Unsatisfied(leap) => {
                     buf.pos += leap;
-                    self.chunk_len += leap;
+                    buf.chunk_len += leap;
                     None
                 }
             }
@@ -116,7 +110,7 @@ impl Chunking for LeapChunker {
     }
 
     fn remaining_range(&self, buf: &ChunkerBuf) -> Range<usize> {
-        buf.pos - self.chunk_len..buf.clen
+        buf.pos - buf.chunk_len..buf.clen
     }
 }
 
