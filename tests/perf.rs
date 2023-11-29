@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use rand::{RngCore, SeedableRng};
 use rand_xorshift::XorShiftRng;
-use zbox::{init_env, File, OpenOptions, Repo, RepoOpener};
+use zbox::{init_env, File, OpenOptions, Repo, RepoOpener, ChunkingAlgorithm};
 
 const DATA_LEN: usize = 60 * 1024 * 1024;
 const FILE_LEN: usize = DATA_LEN / ROUND;
@@ -122,6 +122,7 @@ fn make_files(repo: &mut Repo) -> Vec<File> {
         let filename = format!("/file_{}", i);
         let file = OpenOptions::new()
             .create(true)
+            .chunking_algorithm(ChunkingAlgorithm::Fast)
             .open(repo, filename)
             .unwrap();
         files.push(file);

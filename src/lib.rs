@@ -132,6 +132,7 @@ pub use self::file::{File, VersionReader};
 pub use self::fs::fnode::{DirEntry, FileType, Metadata, Version};
 pub use self::repo::{OpenOptions, Repo, RepoInfo, RepoOpener};
 pub use self::trans::Eid;
+pub use self::content::ChunkingAlgorithm;
 
 #[cfg(any(feature = "storage-faulty", feature = "storage-zbox-faulty"))]
 pub use self::volume::FaultyController;

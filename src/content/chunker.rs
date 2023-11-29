@@ -48,6 +48,9 @@ pub trait Chunking: Send + Sync {
 
 type ChunkerRef = Arc<RwLock<dyn Chunking>>;
 
+/// An algorithm that will be used to deduplicate a file.
+///
+/// Used in `OpenOptions` when opening a file from the repository.
 #[derive(Debug, Copy, Clone)]
 pub enum ChunkingAlgorithm {
     Rabin,
