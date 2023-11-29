@@ -116,13 +116,14 @@ fn test_baseline(data: &Vec<u8>, dir: &Path) {
     println!();
 }
 
-fn make_files(repo: &mut Repo) -> Vec<File> {
+fn make_files(repo: &mut Repo, chunker: ChunkingAlgorithm) -> Vec<File> {
     let mut files: Vec<File> = Vec::new();
     for i in 0..ROUND {
         let filename = format!("/file_{}", i);
         let file = OpenOptions::new()
             .create(true)
-            .chunking_algorithm(ChunkingAlgorithm::Fast)
+            .dedup_chunk(true)
+            .chunking_algorithm(chunker)
             .open(repo, filename)
             .unwrap();
         files.push(file);
@@ -166,9 +167,13 @@ fn test_perf(repo: &mut Repo, files: &mut Vec<File>, data: &[u8]) {
     println!("done");
     print_result(&read_time, &write_time, &tx_time);
     println!();
+
+    for i in 0..TX_ROUND {
+        repo.remove_dir(&dirs[i]).unwrap();
+    }
 }
 
-fn test_mem_perf(data: &[u8]) {
+fn test_mem_perf(data: &[u8], chunker: ChunkingAlgorithm) {
     println!("---------------------------------------------");
     println!("Memory storage performance test (no compress)");
     println!("---------------------------------------------");
@@ -176,7 +181,7 @@ fn test_mem_perf(data: &[u8]) {
         .create(true)
         .open("mem://perf", "pwd")
         .unwrap();
-    let mut files = make_files(&mut repo);
+    let mut files = make_files(&mut repo, chunker);
     test_perf(&mut repo, &mut files, data);
 
     println!("---------------------------------------------");
@@ -187,11 +192,11 @@ fn test_mem_perf(data: &[u8]) {
         .compress(true)
         .open("mem://perf2", "pwd")
         .unwrap();
-    let mut files = make_files(&mut repo);
+    let mut files = make_files(&mut repo, chunker);
     test_perf(&mut repo, &mut files, data);
 }
 
-fn test_file_perf(data: &[u8], dir: &Path) {
+fn test_file_perf(data: &[u8], dir: &Path, chunker: ChunkingAlgorithm) {
     println!("---------------------------------------------");
     println!("File storage performance test (no compress)");
     println!("---------------------------------------------");
@@ -199,7 +204,7 @@ fn test_file_perf(data: &[u8], dir: &Path) {
         .create_new(true)
         .open(&format!("file://{}/repo", dir.display()), "pwd")
         .unwrap();
-    let mut files = make_files(&mut repo);
+    let mut files = make_files(&mut repo, chunker);
     test_perf(&mut repo, &mut files, data);
 
     println!("---------------------------------------------");
@@ -210,7 +215,7 @@ fn test_file_perf(data: &[u8], dir: &Path) {
         .compress(true)
         .open(&format!("file://{}/repo2", dir.display()), "pwd")
         .unwrap();
-    let mut files = make_files(&mut repo);
+    let mut files = make_files(&mut repo, chunker);
     test_perf(&mut repo, &mut files, data);
 }
 
@@ -227,8 +232,41 @@ fn perf_test() {
 
     let data = make_test_data();
     test_baseline(&data, &dir);
-    test_mem_perf(&data);
-    test_file_perf(&data, &dir);
+    test_mem_perf(&data, ChunkingAlgorithm::Super);
+    test_file_perf(&data, &dir, ChunkingAlgorithm::Super);
 
     fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn perf_test_chunkers() {
+    init_env();
+
+    for chunker in algorithms() {
+        println!("{:?}", chunker);
+
+        let mut dir = env::temp_dir();
+        dir.push("zbox_perf_test");
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
+        fs::create_dir(&dir).unwrap();
+
+        let data = make_test_data();
+        test_baseline(&data, &dir);
+        test_mem_perf(&data, chunker);
+        test_file_perf(&data, &dir, chunker);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+fn algorithms() -> Vec<ChunkingAlgorithm> {
+    vec![
+        ChunkingAlgorithm::Fast,
+        ChunkingAlgorithm::Leap,
+        ChunkingAlgorithm::Rabin,
+        ChunkingAlgorithm::Super,
+        ChunkingAlgorithm::Ultra,
+    ]
 }
