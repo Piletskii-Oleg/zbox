@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use super::{File, Result};
 use crate::base::crypto::{Cipher, Cost, MemLimit, OpsLimit};
 use crate::base::{self, Time};
+use crate::content::ChunkingAlgorithm;
 use crate::error::Error;
 use crate::fs::{Config, DirEntry, FileType, Fs, Metadata, Options, Version};
 use crate::trans::Eid;
@@ -329,6 +330,7 @@ pub struct OpenOptions {
     create_new: bool,
     version_limit: Option<u8>,
     dedup_chunk: Option<bool>,
+    chunking_alg: ChunkingAlgorithm,
 }
 
 impl OpenOptions {
@@ -425,6 +427,17 @@ impl OpenOptions {
     /// [`dedup_chunk`]: struct.RepoOpener.html#method.dedup_chunk
     pub fn dedup_chunk(&mut self, dedup_chunk: bool) -> &mut OpenOptions {
         self.dedup_chunk = Some(dedup_chunk);
+        self
+    }
+
+    /// Sets the chunking algorithm used when writing to the file.
+    ///
+    /// Default is SuperCDC.
+    pub fn chunking_algorithm(
+        &mut self,
+        algorithm: ChunkingAlgorithm,
+    ) -> &mut OpenOptions {
+        self.chunking_alg = algorithm;
         self
     }
 
@@ -598,7 +611,13 @@ fn open_file_with_options<P: AsRef<Path>>(
     } else {
         SeekFrom::Start(0)
     };
-    let mut file = File::new(handle, pos, open_opts.read, open_opts.write);
+    let mut file = File::new(
+        handle,
+        pos,
+        open_opts.read,
+        open_opts.write,
+        open_opts.chunking_alg,
+    );
 
     if open_opts.truncate && curr_len > 0 {
         file.set_len(0)?;

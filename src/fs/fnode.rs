@@ -14,7 +14,7 @@ use super::{Handle, Options};
 use crate::base::lru::{CountMeter, Lru, PinChecker};
 use crate::base::Time;
 use crate::content::{
-    ChunkMap, ChunkerRef, Content, ContentReader, Store, StoreRef,
+    ChunkMap, ChunkingAlgorithm, Content, ContentReader, Store, StoreRef,
     StoreWeakRef, Writer as StoreWriter,
 };
 use crate::error::{Error, Result};
@@ -627,7 +627,7 @@ impl Fnode {
         handle: Handle,
         len: usize,
         txid: Txid,
-        chunker: ChunkerRef,
+        chunker: ChunkingAlgorithm,
     ) -> Result<()> {
         let curr_len = {
             let fnode = handle.fnode.read().unwrap();
@@ -773,7 +773,7 @@ impl Writer {
     pub fn new(
         handle: Handle,
         txid: Txid,
-        chunker: ChunkerRef,
+        chunker: ChunkingAlgorithm,
     ) -> Result<Self> {
         let chk_map = {
             let f = handle.fnode.read().unwrap();

@@ -6,15 +6,15 @@ pub mod supercdc;
 pub mod ultra;
 
 use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
+use crate::content::chunker::fast::FastChunker;
 use crate::content::chunker::leap::LeapChunker;
+use crate::content::chunker::rabin::RabinChunker;
+use crate::content::chunker::supercdc::SuperChunker;
+use crate::content::chunker::ultra::UltraChunker;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
 use std::ops::Range;
 use std::sync::{Arc, RwLock};
-use crate::content::fast::FastChunker;
-use crate::content::rabin::RabinChunker;
-use crate::content::supercdc::SuperChunker;
-use crate::content::ultra::UltraChunker;
 
 const MAX_SIZE: usize = 1024 * 64;
 
@@ -46,9 +46,9 @@ pub trait Chunking: Send + Sync {
     ) -> Option<Range<usize>>;
 }
 
-pub type ChunkerRef = Arc<RwLock<dyn Chunking>>;
+type ChunkerRef = Arc<RwLock<dyn Chunking>>;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum ChunkingAlgorithm {
     Rabin,
     Leap,
@@ -64,8 +64,14 @@ pub struct Chunker<W: Write + Seek> {
     chunker: ChunkerRef,
 }
 
+impl Default for ChunkingAlgorithm {
+    fn default() -> Self {
+        Self::Super
+    }
+}
+
 impl<W: Write + Seek> Chunker<W> {
-    pub fn new(dst: W, chunker: ChunkerRef) -> Self {
+    fn new(dst: W, chunker: ChunkerRef) -> Self {
         Self {
             dst,
             buffer: ChunkerBuf::new(),
@@ -79,19 +85,21 @@ impl<W: Write + Seek> Chunker<W> {
     }
 
     pub fn with_algorithm(dst: W, algorithm: ChunkingAlgorithm) -> Self {
-        let chunker: ChunkerRef = match algorithm {
-            ChunkingAlgorithm::Rabin => Arc::new(RwLock::new(RabinChunker::new())),
-            ChunkingAlgorithm::Leap => Arc::new(RwLock::new(LeapChunker::new())),
-            ChunkingAlgorithm::Super => Arc::new(RwLock::new(SuperChunker::new())),
-            ChunkingAlgorithm::Ultra => Arc::new(RwLock::new(UltraChunker::new())),
-            ChunkingAlgorithm::Fast => Arc::new(RwLock::new(FastChunker::new())),
-        };
-
         Self {
             dst,
             buffer: ChunkerBuf::new(),
-            chunker,
+            chunker: chunker_by_algorithm(algorithm),
         }
+    }
+}
+
+fn chunker_by_algorithm(algorithm: ChunkingAlgorithm) -> ChunkerRef {
+    match algorithm {
+        ChunkingAlgorithm::Rabin => Arc::new(RwLock::new(RabinChunker::new())),
+        ChunkingAlgorithm::Leap => Arc::new(RwLock::new(LeapChunker::new())),
+        ChunkingAlgorithm::Super => Arc::new(RwLock::new(SuperChunker::new())),
+        ChunkingAlgorithm::Ultra => Arc::new(RwLock::new(UltraChunker::new())),
+        ChunkingAlgorithm::Fast => Arc::new(RwLock::new(FastChunker::new())),
     }
 }
 
@@ -229,7 +237,7 @@ mod tests {
             ChunkingAlgorithm::Leap,
             ChunkingAlgorithm::Rabin,
             ChunkingAlgorithm::Super,
-            ChunkingAlgorithm::Ultra
+            ChunkingAlgorithm::Ultra,
         ]
     }
 
@@ -345,7 +353,7 @@ mod tests {
         ctx.draw_series(chunks.iter().map(|(&size, &count)| {
             let x0 = SegmentValue::Exact(size);
             let x1 = SegmentValue::Exact(size + ADJUSTMENT);
-            let mut bar = Rectangle::new([(x0, count), (x1, 0)], RED.filled());
+            let bar = Rectangle::new([(x0, count), (x1, 0)], RED.filled());
             bar
         }))
         .unwrap();

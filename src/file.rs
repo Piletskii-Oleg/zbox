@@ -1,8 +1,6 @@
-use crate::content::ultra::UltraChunker;
-use crate::content::ChunkerRef;
+use crate::content::ChunkingAlgorithm;
 use std::fmt::{self, Debug};
 use std::io::{self, Error as IoError, ErrorKind, Read, Seek, SeekFrom, Write};
-use std::sync::{Arc, RwLock};
 
 use super::{Error, Result};
 use crate::fs::fnode::{
@@ -328,7 +326,7 @@ pub struct File {
     tx_handle: Option<TxHandle>,
     can_read: bool,
     can_write: bool,
-    chunker: ChunkerRef,
+    chunker: ChunkingAlgorithm,
 }
 
 impl File {
@@ -337,6 +335,7 @@ impl File {
         pos: SeekFrom,
         can_read: bool,
         can_write: bool,
+        chunker: ChunkingAlgorithm,
     ) -> Self {
         File {
             handle,
@@ -346,7 +345,7 @@ impl File {
             tx_handle: None,
             can_read,
             can_write,
-            chunker: Arc::new(RwLock::new(UltraChunker::new())),
+            chunker,
         }
     }
 
@@ -451,7 +450,7 @@ impl File {
             let mut wtr = FnodeWriter::new(
                 self.handle.clone(),
                 tx_handle.txid,
-                self.chunker.clone(),
+                self.chunker,
             )?;
             wtr.seek(self.seek_pos(self.pos))?;
             self.wtr = Some(wtr);
@@ -576,7 +575,7 @@ impl File {
                 self.handle.clone(),
                 len,
                 tx_handle.txid,
-                self.chunker.clone(),
+                self.chunker,
             )
         })?;
 

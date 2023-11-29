@@ -22,7 +22,6 @@ pub struct UltraChunker {
     out_window: [u8; WINDOW_SIZE],
     in_window: [u8; WINDOW_SIZE],
     distance_map: Vec<Vec<usize>>,
-    chunk_len: usize,
     distance: usize,
     equal_window_count: usize,
 }
@@ -43,7 +42,6 @@ impl UltraChunker {
             out_window: [0u8; WINDOW_SIZE],
             in_window: [0u8; WINDOW_SIZE],
             distance_map: distance_map(),
-            chunk_len: 0,
             distance: 0,
             equal_window_count: 0,
         }

@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
 
 pub(super) const BUFFER_SIZE: usize = 8 * 64 * 1024;
 
-pub(super) struct ChunkerBuf {
+pub(crate) struct ChunkerBuf {
     pub pos: usize,
     pub clen: usize, // current length
     pub chunk_len: usize,
