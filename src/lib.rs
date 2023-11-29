@@ -127,12 +127,12 @@ mod volume;
 
 pub use self::base::crypto::{Cipher, MemLimit, OpsLimit};
 pub use self::base::{init_env, zbox_version};
+pub use self::content::ChunkingAlgorithm;
 pub use self::error::{Error, Result};
 pub use self::file::{File, VersionReader};
 pub use self::fs::fnode::{DirEntry, FileType, Metadata, Version};
 pub use self::repo::{OpenOptions, Repo, RepoInfo, RepoOpener};
 pub use self::trans::Eid;
-pub use self::content::ChunkingAlgorithm;
 
 #[cfg(any(feature = "storage-faulty", feature = "storage-zbox-faulty"))]
 pub use self::volume::FaultyController;
