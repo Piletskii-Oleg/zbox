@@ -19,7 +19,7 @@ const MASK_S_LS: u64 = MASK_B << 1;
 const MASK_L_LS: u64 = MASK_L << 1;
 const MASK_B_LS: u64 = MASK_B << 1;
 
-pub(super) struct SuperChunker {
+pub struct SuperChunker {
     records: HashMap<u64, usize>,
     last_hash: u64,
     record_last_hash: bool,

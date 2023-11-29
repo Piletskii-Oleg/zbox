@@ -1,23 +1,24 @@
 mod buffer;
-mod fast;
-mod leap;
-mod rabin;
-mod supercdc;
-mod ultra;
+pub mod fast;
+pub mod leap;
+pub mod rabin;
+pub mod supercdc;
+pub mod ultra;
 
 use crate::content::chunker::buffer::{ChunkerBuf, BUFFER_SIZE};
 use crate::content::chunker::leap::LeapChunker;
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
 use std::ops::Range;
+use std::sync::{Arc, RwLock};
 
 const MAX_SIZE: usize = 1024 * 64;
 
 /// Trait that should be implemented by all chunking algorithm implementations that
 /// are to be used with the Zbox chunker.
 ///
-/// Debug implementation should contain at least minimal information about the used algorithm.
-trait Chunking: Debug {
+/// All implementations must be thread-safe.
+pub trait Chunking: Debug + Send + Sync {
     /// Advances the buffer position and finds the next chunking cut-point, returning a range in the `buf`
     /// which corresponds to the found chunk.
     ///
@@ -41,19 +42,21 @@ trait Chunking: Debug {
     ) -> Option<Range<usize>>;
 }
 
+pub type ChunkerRef = Arc<RwLock<dyn Chunking>>;
+
 /// Chunker
 pub struct Chunker<W: Write + Seek> {
     dst: W,
     buffer: ChunkerBuf,
-    chunker: Box<dyn Chunking>,
+    chunker: ChunkerRef,
 }
 
 impl<W: Write + Seek> Chunker<W> {
-    pub fn new(dst: W) -> Self {
+    pub fn new(dst: W, chunker: ChunkerRef) -> Self {
         Self {
             dst,
             buffer: ChunkerBuf::new(),
-            chunker: Box::new(LeapChunker::new()),
+            chunker,
         }
     }
 
@@ -62,7 +65,7 @@ impl<W: Write + Seek> Chunker<W> {
         Ok(self.dst)
     }
 
-    fn with_chunker(dst: W, chunker: Box<dyn Chunking>) -> Self {
+    fn with_chunker(dst: W, chunker: ChunkerRef) -> Self {
         Self {
             dst,
             buffer: ChunkerBuf::new(),
@@ -81,8 +84,11 @@ impl<W: Write + Seek> Write for Chunker<W> {
         let in_len = self.buffer.append(buf);
 
         while self.buffer.has_something() {
-            if let Some(write_range) =
-                self.chunker.next_write_range(&mut self.buffer)
+            if let Some(write_range) = self
+                .chunker
+                .write()
+                .unwrap() // unwrap shouldn't be much of a problem because there can only be 1 write at a time (guaranteed by file.rs)
+                .next_write_range(&mut self.buffer)
             {
                 assert_eq!(write_range.end, self.buffer.pos);
 
@@ -200,13 +206,13 @@ mod tests {
         }
     }
 
-    fn inner_chunkers() -> Vec<Box<dyn Chunking>> {
+    fn inner_chunkers() -> Vec<ChunkerRef> {
         vec![
-            Box::new(RabinChunker::new()),
-            Box::new(FastChunker::new()),
-            Box::new(SuperChunker::new()),
-            Box::new(UltraChunker::new()),
-            Box::new(LeapChunker::new()),
+            Arc::new(RwLock::new(RabinChunker::new())),
+            Arc::new(RwLock::new(FastChunker::new())),
+            Arc::new(RwLock::new(SuperChunker::new())),
+            Arc::new(RwLock::new(UltraChunker::new())),
+            Arc::new(RwLock::new(LeapChunker::new())),
         ]
     }
 
@@ -283,7 +289,10 @@ mod tests {
 
         {
             let mut cur = Cursor::new(vec.clone());
-            let mut ckr = Chunker::new(&mut sinker);
+            let mut ckr = Chunker::new(
+                &mut sinker,
+                Arc::new(RwLock::new(LeapChunker::new())),
+            );
             copy(&mut cur, &mut ckr).unwrap();
             ckr.flush().unwrap();
         }

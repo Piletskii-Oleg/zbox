@@ -13,7 +13,7 @@ use super::content::{
 use super::segment::{
     Cache as SegCache, DataCache as SegDataCache, SegDataRef, SegRef,
 };
-use super::Content;
+use super::{ChunkerRef, Content};
 use crate::base::crypto::Hash;
 use crate::base::RefCnt;
 use crate::error::{Error, Result};
@@ -245,6 +245,7 @@ impl Writer {
         chk_map: ChunkMap,
         txmgr: &TxMgrWeakRef,
         store: &StoreWeakRef,
+        chunker: ChunkerRef,
     ) -> Result<Self> {
         let vol = {
             let store = store.upgrade().ok_or(Error::RepoClosed)?;
@@ -253,7 +254,7 @@ impl Writer {
         };
         let ctn_wtr = ContentWriter::new(txid, chk_map, store, txmgr, &vol);
         Ok(Writer {
-            inner: Chunker::new(ctn_wtr),
+            inner: Chunker::new(ctn_wtr, chunker),
         })
     }
 

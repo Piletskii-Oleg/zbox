@@ -14,8 +14,8 @@ use super::{Handle, Options};
 use crate::base::lru::{CountMeter, Lru, PinChecker};
 use crate::base::Time;
 use crate::content::{
-    ChunkMap, Content, ContentReader, Store, StoreRef, StoreWeakRef,
-    Writer as StoreWriter,
+    ChunkMap, ChunkerRef, Content, ContentReader, Store, StoreRef,
+    StoreWeakRef, Writer as StoreWriter,
 };
 use crate::error::{Error, Result};
 use crate::trans::cow::{Cow, CowCache, CowRef, CowWeakRef, Cowable, IntoCow};
@@ -623,7 +623,12 @@ impl Fnode {
     /// Set file to specified length
     ///
     /// if new length is equal to old length, do nothing
-    pub fn set_len(handle: Handle, len: usize, txid: Txid) -> Result<()> {
+    pub fn set_len(
+        handle: Handle,
+        len: usize,
+        txid: Txid,
+        chunker: ChunkerRef,
+    ) -> Result<()> {
         let curr_len = {
             let fnode = handle.fnode.read().unwrap();
             fnode.curr_len()
@@ -649,7 +654,7 @@ impl Fnode {
                 // append
                 let mut size = len - curr_len;
                 let buf = vec![0u8; min(size, 16 * 1024)];
-                let mut wtr = Writer::new(handle, txid)?;
+                let mut wtr = Writer::new(handle, txid, chunker)?;
                 wtr.seek(SeekFrom::Start(curr_len as u64))?;
 
                 while size > 0 {
@@ -765,13 +770,22 @@ pub struct Writer {
 }
 
 impl Writer {
-    pub fn new(handle: Handle, txid: Txid) -> Result<Self> {
+    pub fn new(
+        handle: Handle,
+        txid: Txid,
+        chunker: ChunkerRef,
+    ) -> Result<Self> {
         let chk_map = {
             let f = handle.fnode.read().unwrap();
             f.chk_map.clone()
         };
-        let inner =
-            StoreWriter::new(txid, chk_map, &handle.txmgr, &handle.store)?;
+        let inner = StoreWriter::new(
+            txid,
+            chk_map,
+            &handle.txmgr,
+            &handle.store,
+            chunker,
+        )?;
         Ok(Writer { inner, handle })
     }
 

@@ -18,7 +18,7 @@ const MASK_L: usize = 0x2C;
 
 const LEST: usize = 64;
 
-pub(super) struct UltraChunker {
+pub struct UltraChunker {
     out_window: [u8; WINDOW_SIZE],
     in_window: [u8; WINDOW_SIZE],
     distance_map: Vec<Vec<usize>>,

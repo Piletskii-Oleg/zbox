@@ -1,5 +1,8 @@
+use crate::content::ultra::UltraChunker;
+use crate::content::ChunkerRef;
 use std::fmt::{self, Debug};
 use std::io::{self, Error as IoError, ErrorKind, Read, Seek, SeekFrom, Write};
+use std::sync::{Arc, RwLock};
 
 use super::{Error, Result};
 use crate::fs::fnode::{
@@ -325,6 +328,7 @@ pub struct File {
     tx_handle: Option<TxHandle>,
     can_read: bool,
     can_write: bool,
+    chunker: ChunkerRef,
 }
 
 impl File {
@@ -342,6 +346,7 @@ impl File {
             tx_handle: None,
             can_read,
             can_write,
+            chunker: Arc::new(RwLock::new(UltraChunker::new())),
         }
     }
 
@@ -443,8 +448,11 @@ impl File {
         let txmgr = self.handle.txmgr.upgrade().ok_or(Error::RepoClosed)?;
         let tx_handle = TxMgr::begin_trans(&txmgr)?;
         tx_handle.run(|| {
-            let mut wtr =
-                FnodeWriter::new(self.handle.clone(), tx_handle.txid)?;
+            let mut wtr = FnodeWriter::new(
+                self.handle.clone(),
+                tx_handle.txid,
+                self.chunker.clone(),
+            )?;
             wtr.seek(self.seek_pos(self.pos))?;
             self.wtr = Some(wtr);
             Ok(())
@@ -564,7 +572,12 @@ impl File {
         let txmgr = self.handle.txmgr.upgrade().ok_or(Error::RepoClosed)?;
         let tx_handle = TxMgr::begin_trans(&txmgr)?;
         tx_handle.run_all_exclusive(|| {
-            Fnode::set_len(self.handle.clone(), len, tx_handle.txid)
+            Fnode::set_len(
+                self.handle.clone(),
+                len,
+                tx_handle.txid,
+                self.chunker.clone(),
+            )
         })?;
 
         // re-create reader if there is an existing reader

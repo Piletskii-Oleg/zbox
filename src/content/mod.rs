@@ -12,5 +12,7 @@ mod span;
 mod store;
 
 pub use self::chunk::ChunkMap;
+pub use self::chunker::{fast, leap, rabin, supercdc, ultra};
+pub use self::chunker::{ChunkerRef, Chunking};
 pub use self::content::{Content, ContentRef, Reader as ContentReader};
 pub use self::store::{Store, StoreRef, StoreWeakRef, Writer};

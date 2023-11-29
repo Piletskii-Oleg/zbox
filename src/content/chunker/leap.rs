@@ -27,14 +27,12 @@ enum PointStatus {
 
 /// Chunker
 pub struct LeapChunker {
-    chunk_len: usize,
     ef_matrix: Vec<Vec<u8>>,
 }
 
 impl LeapChunker {
     pub fn new() -> Self {
         Self {
-            chunk_len: 0,
             ef_matrix: generate_ef_matrix(),
         }
     }
