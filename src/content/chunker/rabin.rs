@@ -27,7 +27,7 @@ const WIN_MASK: usize = WIN_SIZE - 1;
 const WIN_SLIDE_OFFSET: usize = 64;
 const WIN_SLIDE_POS: usize = MIN_SIZE - WIN_SLIDE_OFFSET;
 
-pub(super) struct RabinChunker {
+pub struct RabinChunker {
     params: ChunkerParams, // chunker parameters
 }
 

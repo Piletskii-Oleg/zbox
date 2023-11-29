@@ -10,7 +10,7 @@ const MAX_SIZE: usize = 32 * 1024; // maximum chunk size, 32k
 
 const NORMALIZATION_LEVEL: Normalization = Normalization::Level2;
 
-pub(super) struct FastChunker;
+pub struct FastChunker;
 
 impl FastChunker {
     pub fn new() -> Self {
