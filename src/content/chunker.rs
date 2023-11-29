@@ -11,6 +11,10 @@ use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
 use std::ops::Range;
 use std::sync::{Arc, RwLock};
+use crate::content::fast::FastChunker;
+use crate::content::rabin::RabinChunker;
+use crate::content::supercdc::SuperChunker;
+use crate::content::ultra::UltraChunker;
 
 const MAX_SIZE: usize = 1024 * 64;
 
@@ -18,7 +22,7 @@ const MAX_SIZE: usize = 1024 * 64;
 /// are to be used with the Zbox chunker.
 ///
 /// All implementations must be thread-safe.
-pub trait Chunking: Debug + Send + Sync {
+pub trait Chunking: Send + Sync {
     /// Advances the buffer position and finds the next chunking cut-point, returning a range in the `buf`
     /// which corresponds to the found chunk.
     ///
@@ -44,6 +48,15 @@ pub trait Chunking: Debug + Send + Sync {
 
 pub type ChunkerRef = Arc<RwLock<dyn Chunking>>;
 
+#[derive(Debug)]
+pub enum ChunkingAlgorithm {
+    Rabin,
+    Leap,
+    Super,
+    Ultra,
+    Fast,
+}
+
 /// Chunker
 pub struct Chunker<W: Write + Seek> {
     dst: W,
@@ -65,7 +78,15 @@ impl<W: Write + Seek> Chunker<W> {
         Ok(self.dst)
     }
 
-    fn with_chunker(dst: W, chunker: ChunkerRef) -> Self {
+    pub fn with_algorithm(dst: W, algorithm: ChunkingAlgorithm) -> Self {
+        let chunker: ChunkerRef = match algorithm {
+            ChunkingAlgorithm::Rabin => Arc::new(RwLock::new(RabinChunker::new())),
+            ChunkingAlgorithm::Leap => Arc::new(RwLock::new(LeapChunker::new())),
+            ChunkingAlgorithm::Super => Arc::new(RwLock::new(SuperChunker::new())),
+            ChunkingAlgorithm::Ultra => Arc::new(RwLock::new(UltraChunker::new())),
+            ChunkingAlgorithm::Fast => Arc::new(RwLock::new(FastChunker::new())),
+        };
+
         Self {
             dst,
             buffer: ChunkerBuf::new(),
@@ -146,10 +167,6 @@ mod tests {
     use crate::base::init_env;
     use crate::base::utils::speed_str;
     use crate::content::chunk::Chunk;
-    use crate::content::chunker::fast::FastChunker;
-    use crate::content::chunker::rabin::RabinChunker;
-    use crate::content::chunker::supercdc::SuperChunker;
-    use crate::content::chunker::ultra::UltraChunker;
 
     const MIN_CHUNK_SIZE: usize = 2048;
 
@@ -206,13 +223,13 @@ mod tests {
         }
     }
 
-    fn inner_chunkers() -> Vec<ChunkerRef> {
+    fn inner_chunkers() -> Vec<ChunkingAlgorithm> {
         vec![
-            Arc::new(RwLock::new(RabinChunker::new())),
-            Arc::new(RwLock::new(FastChunker::new())),
-            Arc::new(RwLock::new(SuperChunker::new())),
-            Arc::new(RwLock::new(UltraChunker::new())),
-            Arc::new(RwLock::new(LeapChunker::new())),
+            ChunkingAlgorithm::Fast,
+            ChunkingAlgorithm::Leap,
+            ChunkingAlgorithm::Rabin,
+            ChunkingAlgorithm::Super,
+            ChunkingAlgorithm::Ultra
         ]
     }
 
@@ -233,7 +250,7 @@ mod tests {
                 chks: Vec::new(),
             };
 
-            let mut ckr = Chunker::with_chunker(sinker, chunker);
+            let mut ckr = Chunker::with_algorithm(sinker, chunker);
             let result = copy(&mut cur, &mut ckr);
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), DATA_LEN as u64);
@@ -259,7 +276,7 @@ mod tests {
             let sinker = VoidSinker {};
 
             // test chunker performance
-            let mut ckr = Chunker::with_chunker(sinker, chunker);
+            let mut ckr = Chunker::with_algorithm(sinker, chunker);
             let now = Instant::now();
             copy(&mut cur, &mut ckr).unwrap();
             ckr.flush().unwrap();
