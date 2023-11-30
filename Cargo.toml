@@ -103,6 +103,7 @@ bytes = "1.1.0"
 tempdir = "0.3.7"
 rand_xorshift = "0.3.0"
 tokio = { version = "1.12.0", features = ["rt", "net", "macros", "rt-multi-thread"] }
+criterion = "0.5.1"
 
 [build-dependencies]
 pkg-config = "0.3.20"
@@ -118,3 +119,7 @@ zip = "0.5.13"
 [profile.release-with-info]
 inherits = "release"
 debug = true
+
+[[bench]]
+name = "perf"
+harness = false
