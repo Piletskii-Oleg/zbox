@@ -19,11 +19,16 @@ pub fn performance_benchmark(c: &mut Criterion) {
             |b| {
                 b.iter_batched(
                     || {
-                        let mut repo = create_repo();
-                        let mut file = create_file(&mut repo, chunker);
+                        let mut repo = create_repo("write-test");
+                        let file = create_file(
+                            &mut repo,
+                            chunker,
+                            "write-test",
+                            "file",
+                        );
                         (file, repo)
                     },
-                    |(mut file, repo)| {
+                    |(mut file, _)| {
                         write(&mut file, &data).unwrap();
                     },
                     BatchSize::LargeInput,
@@ -31,8 +36,9 @@ pub fn performance_benchmark(c: &mut Criterion) {
             },
         );
 
-        let mut read_repo = create_repo();
-        let mut read_file = create_file(&mut read_repo, chunker);
+        let mut read_repo = create_repo("read-test");
+        let mut read_file =
+            create_file(&mut read_repo, chunker, "read-test", "file");
         read_file.write_once(&data).unwrap();
         group.bench_function(
             BenchmarkId::new("read", chunker_string(chunker)),
@@ -46,6 +52,26 @@ pub fn performance_benchmark(c: &mut Criterion) {
                 )
             },
         );
+
+        let mut copy_repo = create_repo("copy-test");
+        let mut from_file =
+            create_file(&mut copy_repo, chunker, "copy-test", "from");
+        from_file.write_once(&data).unwrap();
+        let mut to_file =
+            create_file(&mut copy_repo, chunker, "copy-test", "to");
+        to_file.write_once(b"www").unwrap();
+        group.bench_function(
+            BenchmarkId::new("copy", chunker_string(chunker)),
+            |b| {
+                b.iter_batched(
+                    || {
+                        read_file.seek(SeekFrom::Start(0)).unwrap();
+                    },
+                    |_| copy(&mut copy_repo, "from", "to").unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
     }
 }
 
@@ -53,31 +79,36 @@ fn chunker_string(chunking_algorithm: ChunkingAlgorithm) -> String {
     format!("{:?}", chunking_algorithm)
 }
 
-fn create_repo() -> Repo {
+fn create_repo(path: &str) -> Repo {
     let mut dir = env::temp_dir();
-    dir.push("zbox_perf_test");
+    dir.push(path);
     if dir.exists() {
         fs::remove_dir_all(&dir).unwrap();
     }
     fs::create_dir(&dir).unwrap();
-    let mut repo = RepoOpener::new()
+    let repo = RepoOpener::new()
         .create(true)
         .open(&format!("file://{}/repo", dir.display()), "pwd")
         .unwrap();
     repo
 }
 
-fn create_file(repo: &mut Repo, chunker: ChunkingAlgorithm) -> File {
-    let file_path = "file://{}/repo/file";
-    if repo.path_exists(file_path).unwrap() {
-        repo.remove_file(file_path).unwrap();
+fn create_file(
+    repo: &mut Repo,
+    chunker: ChunkingAlgorithm,
+    repo_name: &str,
+    file_name: &str,
+) -> File {
+    let file_path = format!("file:///tmp/{}/repo/{}", repo_name, file_name);
+    if repo.path_exists(&file_path).unwrap() {
+        repo.remove_file(&file_path).unwrap();
     }
 
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .create(true)
         .dedup_chunk(true)
         .chunking_algorithm(chunker)
-        .open(repo, "/file")
+        .open(repo, format!("/{}", file_name))
         .unwrap();
     file
 }
@@ -89,6 +120,12 @@ fn write(file: &mut File, data: &[u8]) -> zbox::Result<()> {
 fn read(file: &mut File, buf: &mut Vec<u8>) -> io::Result<usize> {
     file.seek(SeekFrom::Start(0)).unwrap();
     file.read_to_end(buf)
+}
+
+fn copy(repo: &mut Repo, from_file: &str, to_file: &str) -> zbox::Result<()> {
+    let from = format!("/{}", from_file);
+    let to = format!("/{}", to_file);
+    repo.copy(from, to)
 }
 
 fn algorithms() -> Vec<ChunkingAlgorithm> {
