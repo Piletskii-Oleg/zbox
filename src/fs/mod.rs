@@ -13,6 +13,7 @@ pub use self::fs::{Fs, ShutterRef};
 use crate::base::crypto::{Cipher, Cost, Crypto};
 use crate::content::StoreWeakRef;
 use crate::trans::TxMgrWeakRef;
+use crate::ChunkingAlgorithm;
 
 // Default file versoin limit
 const DEFAULT_VERSION_LIMIT: u8 = 1;
@@ -23,6 +24,7 @@ pub struct Options {
     pub version_limit: u8,
     pub dedup_chunk: bool,
     pub dedup_file: bool,
+    pub chunking_algorithm: ChunkingAlgorithm,
 }
 
 impl Default for Options {
@@ -31,6 +33,7 @@ impl Default for Options {
             version_limit: DEFAULT_VERSION_LIMIT,
             dedup_chunk: false,
             dedup_file: false,
+            chunking_algorithm: ChunkingAlgorithm::default(),
         }
     }
 }

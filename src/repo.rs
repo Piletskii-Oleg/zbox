@@ -195,6 +195,23 @@ impl RepoOpener {
         self
     }
 
+    /// Sets the chunking algorithm used by default in the repository.
+    ///
+    /// This option indicates which chunking algorithm should be used when
+    /// writing data to a file. This setting is a repository-wise setting,
+    /// individual file can overwrite it by setting [`chunking_algorithm`]
+    /// in [`OpenOptions`]. Default is SuperCDC.
+    ///
+    /// [`chunking_algorithm`]: struct.OpenOptions.html#method.chunking_algorithm
+    /// [`OpenOptions`]: struct.OpenOptions.html
+    pub fn chunking_algorithm(
+        &mut self,
+        algorithm: ChunkingAlgorithm,
+    ) -> &mut Self {
+        self.cfg.opts.chunking_algorithm = algorithm;
+        self
+    }
+
     /// Opens a repository at URI with the password and options specified by
     /// `self`.
     ///
@@ -330,7 +347,7 @@ pub struct OpenOptions {
     create_new: bool,
     version_limit: Option<u8>,
     dedup_chunk: Option<bool>,
-    chunking_alg: ChunkingAlgorithm,
+    chunking_algorithm: Option<ChunkingAlgorithm>,
 }
 
 impl OpenOptions {
@@ -432,12 +449,15 @@ impl OpenOptions {
 
     /// Sets the chunking algorithm used when writing to the file.
     ///
-    /// Default is SuperCDC.
+    /// This option indicates what chunking algorithm is used when writing data to a file.
+    /// It will fall back to repository's [`chunking_algorithm`] if it is not set.
+    ///
+    /// [`chunking_algorithm`]: struct.RepoOpener.html#method.chunking_algorithm
     pub fn chunking_algorithm(
         &mut self,
         algorithm: ChunkingAlgorithm,
     ) -> &mut OpenOptions {
-        self.chunking_alg = algorithm;
+        self.chunking_algorithm = Some(algorithm);
         self
     }
 
@@ -477,6 +497,7 @@ pub struct RepoInfo {
     dedup_file: bool,
     read_only: bool,
     ctime: Time,
+    chunking_algorithm: ChunkingAlgorithm,
 }
 
 impl RepoInfo {
@@ -557,6 +578,12 @@ impl RepoInfo {
     pub fn created_at(&self) -> SystemTime {
         self.ctime.to_system_time()
     }
+
+    /// Returns the chunking algorithm used by default in this repository.
+    #[inline]
+    pub fn chunking_algorithm(&self) -> ChunkingAlgorithm {
+        self.chunking_algorithm
+    }
 }
 
 // open a regular file with options
@@ -611,12 +638,20 @@ fn open_file_with_options<P: AsRef<Path>>(
     } else {
         SeekFrom::Start(0)
     };
+
+    let chunking_algorithm =
+        if let Some(algorithm) = open_opts.chunking_algorithm {
+            algorithm
+        } else {
+            fs.chunking_algorithm()
+        };
+
     let mut file = File::new(
         handle,
         pos,
         open_opts.read,
         open_opts.write,
-        open_opts.chunking_alg,
+        chunking_algorithm,
     );
 
     if open_opts.truncate && curr_len > 0 {
@@ -764,6 +799,7 @@ impl Repo {
             dedup_file: meta.opts.dedup_file,
             read_only: meta.read_only,
             ctime: meta.vol_info.ctime,
+            chunking_algorithm: meta.opts.chunking_algorithm,
         })
     }
 

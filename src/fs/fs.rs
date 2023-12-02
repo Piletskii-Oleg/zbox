@@ -16,6 +16,7 @@ use crate::error::{Error, Result};
 use crate::trans::cow::IntoCow;
 use crate::trans::{Eid, Id, TxMgr, TxMgrRef};
 use crate::volume::{Info as VolumeInfo, Volume, VolumeRef};
+use crate::ChunkingAlgorithm;
 
 // mask secrets in uri
 fn mask_uri(uri: &str) -> String {
@@ -642,6 +643,11 @@ impl Fs {
         vol.destroy()?;
         info!("repo destroyed");
         Ok(())
+    }
+
+    /// Returns the chunking algorithm used by the file system.
+    pub fn chunking_algorithm(&self) -> ChunkingAlgorithm {
+        self.opts.chunking_algorithm
     }
 }
 

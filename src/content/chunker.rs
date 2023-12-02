@@ -11,6 +11,7 @@ use crate::content::chunker::leap::LeapChunker;
 use crate::content::chunker::rabin::RabinChunker;
 use crate::content::chunker::supercdc::SuperChunker;
 use crate::content::chunker::ultra::UltraChunker;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug};
 use std::io::{Result as IoResult, Seek, SeekFrom, Write};
 use std::ops::Range;
@@ -51,7 +52,7 @@ type ChunkerRef = Arc<RwLock<dyn Chunking>>;
 /// An algorithm that will be used to deduplicate a file.
 ///
 /// Used in `OpenOptions` when opening a file from the repository.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum ChunkingAlgorithm {
     Rabin,
     Leap,
