@@ -51,7 +51,11 @@ type ChunkerRef = Arc<RwLock<dyn Chunking>>;
 
 /// An algorithm that will be used to deduplicate a file.
 ///
-/// Used in `OpenOptions` when opening a file from the repository.
+/// Can be used in [`RepoOpener`][crate::repo::RepoOpener] when opening a repository
+/// and [`OpenOptions`][crate::repo::OpenOptions] when opening a file from the repository.
+///
+/// If called on [`OpenOptions`], the chosen algorithm will take precedence on that file
+/// over repository's chunking algorithm.
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum ChunkingAlgorithm {
     Rabin,
