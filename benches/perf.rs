@@ -1,10 +1,10 @@
 use criterion::measurement::WallTime;
 use criterion::{
     criterion_group, criterion_main, BatchSize, BenchmarkGroup, BenchmarkId,
-    Criterion,
+    Criterion, Throughput,
 };
 use std::io::{Read, Seek, SeekFrom};
-use std::{env, fs, io};
+use std::{fs, io};
 use zbox::{ChunkingAlgorithm, File, OpenOptions, Repo, RepoOpener};
 
 struct Dataset<'a> {
@@ -26,18 +26,19 @@ struct Parameters<'a> {
 }
 
 pub fn performance_benchmark(c: &mut Criterion) {
-    zbox::init_env();
+    zbox::
+    init_env();
 
     let datasets = vec![
-        Dataset::new("create.zip", "create"),
+        //Dataset::new("create.zip", "create"),
         Dataset::new("mail.tar", "mail"),
         Dataset::new("linux.tar", "linux"),
     ];
 
-    let storages = vec!["file", "mem"];
+    let storages = vec!["mem", "file"];
 
     let mut group = c.benchmark_group("Chunkers");
-    group.sample_size(100);
+    group.sample_size(10);
 
     for dataset in datasets {
         for chunker in algorithms() {
@@ -48,6 +49,12 @@ pub fn performance_benchmark(c: &mut Criterion) {
                     storage,
                 };
 
+                let size = {
+                    let data = fs::read(&dataset.path).unwrap();
+                    data.len()
+                };
+
+                group.throughput(Throughput::Bytes(size as u64));
                 bench_write_once(&mut group, parameters);
                 bench_read_to_end(&mut group, parameters);
                 bench_copy(&mut group, parameters);
@@ -61,14 +68,14 @@ fn bench_copy(group: &mut BenchmarkGroup<WallTime>, parameters: Parameters) {
     let chunker = parameters.chunker;
     let dataset = parameters.dataset;
 
-    let (data, zero_data) = read_dataset(&dataset);
+    let data = read_dataset(&dataset);
 
     let mut copy_repo = create_repo("copy-test", storage);
     let mut from_file =
-        create_file(&mut copy_repo, chunker, "copy-test", "from", &zero_data);
+        create_file(&mut copy_repo, chunker, "copy-test", "from", data.len());
     from_file.write_once(&data).unwrap();
     let mut to_file =
-        create_file(&mut copy_repo, chunker, "copy-test", "to", &zero_data);
+        create_file(&mut copy_repo, chunker, "copy-test", "to", data.len());
     to_file.write_once(b"www").unwrap();
     group.bench_function(
         BenchmarkId::new("copy", bench_string(parameters, data.len())),
@@ -82,10 +89,9 @@ fn bench_copy(group: &mut BenchmarkGroup<WallTime>, parameters: Parameters) {
     );
 }
 
-fn read_dataset(dataset: &&Dataset) -> (Vec<u8>, Vec<u8>) {
+fn read_dataset(dataset: &Dataset) -> Vec<u8> {
     let data = fs::read(&dataset.path).unwrap();
-    let zero_data = vec![0u8; data.len()];
-    (data, zero_data)
+    data
 }
 
 fn bench_read_to_end(
@@ -96,11 +102,10 @@ fn bench_read_to_end(
     let chunker = parameters.chunker;
     let dataset = parameters.dataset;
 
-    let (data, zero_data) = read_dataset(&dataset);
+    let data = read_dataset(&dataset);
 
     let mut read_repo = create_repo("read-test", storage);
-    let mut read_file =
-        create_file(&mut read_repo, chunker, "read-test", "file", &zero_data);
+    let mut read_file = create_file(&mut read_repo, chunker, "read-test", "file", data.len());
     read_file.write_once(&data).unwrap();
     group.bench_function(
         BenchmarkId::new("read", bench_string(parameters, data.len())),
@@ -125,7 +130,7 @@ fn bench_write_once(
     let chunker = parameters.chunker;
     let dataset = parameters.dataset;
 
-    let (data, zero_data) = read_dataset(&dataset);
+    let data = read_dataset(&dataset);
 
     group.bench_function(
         BenchmarkId::new("write", bench_string(parameters, data.len())),
@@ -138,14 +143,14 @@ fn bench_write_once(
                         chunker,
                         "write-test",
                         "file",
-                        &zero_data,
+                        data.len(),
                     );
                     (file, repo)
                 },
-                |(mut file, _)| {
+                |(mut file, mut repo)| {
                     write_once(&mut file, &data).unwrap();
                 },
-                BatchSize::LargeInput,
+                BatchSize::PerIteration,
             )
         },
     );
@@ -163,16 +168,15 @@ fn bench_string(parameters: Parameters, size: usize) -> String {
     )
 }
 
-fn create_repo(path: &str, storage: &str) -> Repo {
-    let mut dir = env::temp_dir();
-    dir.push(path);
-    if dir.exists() {
-        fs::remove_dir_all(&dir).unwrap();
+fn create_repo(repo_name: &str, storage: &str) -> Repo {
+    let repo_path = format!("{}:///tmp/{}/repo", storage, repo_name);
+    if Repo::exists(&repo_path).unwrap() {
+        Repo::destroy(&repo_path).unwrap();
     }
-    fs::create_dir(&dir).unwrap();
+
     let repo = RepoOpener::new()
-        .create(true)
-        .open(&format!("{}://{}/repo", storage, dir.display()), "pwd")
+        .create_new(true)
+        .open(&repo_path, "pwd")
         .unwrap();
     repo
 }
@@ -182,7 +186,7 @@ fn create_file(
     chunker: ChunkingAlgorithm,
     repo_name: &str,
     file_name: &str,
-    zero_data: &[u8],
+    len: usize,
 ) -> File {
     let storage = repo_storage(repo);
     let file_path =
@@ -192,12 +196,14 @@ fn create_file(
     }
 
     let mut file = OpenOptions::new()
-        .create(true)
+        .create_new(true)
         .dedup_chunk(true)
         .chunking_algorithm(chunker)
         .open(repo, format!("/{}", file_name))
         .unwrap();
-    file.write_once(zero_data).unwrap();
+
+    let zero_data = vec![0u8; len];
+    file.write_once(&zero_data).unwrap();
     file
 }
 
