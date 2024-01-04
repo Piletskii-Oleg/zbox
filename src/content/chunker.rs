@@ -175,13 +175,16 @@ impl<W: Write + Seek> Seek for Chunker<W> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::convert::TryInto;
     use std::io::{copy, Cursor, Result as IoResult, Seek, SeekFrom, Write};
-    use std::time::Instant;
+    use std::iter::FromIterator;
+    use std::time::{Duration, Instant};
 
     use super::*;
-    use crate::base::crypto::{Crypto, RandomSeed, RANDOM_SEED_SIZE};
+    use crate::base::crypto::{Crypto, RandomSeed, RANDOM_SEED_SIZE, Hash};
     use crate::base::init_env;
     use crate::base::utils::speed_str;
+    use crate::ChunkingAlgorithm::Leap;
     use crate::content::chunk::Chunk;
 
     const MIN_CHUNK_SIZE: usize = 2048;
@@ -277,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn chunker_perf() {
+    fn chunker_perf_simple() {
         init_env();
 
         const DATA_LEN: usize = 100 * 1024 * 1024;
@@ -304,13 +307,96 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn file_dedup_ratio() {
-        let path = std::path::Path::new("../rust-chunking/ubuntu.iso");
+    fn chunker_perf() {
+        init_env();
+
+        const PATH: &str = "linux.tar";
+        const TEST_COUNT: usize = 100;
+
+        let data_length = {
+            let data = std::fs::read(PATH).unwrap();
+            data.len()
+        };
+
+        for chunker in inner_chunkers() {
+            let chunker_name = format!("{:?}", chunker);
+            let mut times = Vec::with_capacity(TEST_COUNT);
+
+            for i in 0..TEST_COUNT {
+                let data = std::fs::read(PATH).unwrap();
+                let mut cur = Cursor::new(data);
+                let sinker = VoidSinker {};
+
+                let mut ckr = Chunker::with_algorithm(sinker, chunker);
+                let now = Instant::now();
+                copy(&mut cur, &mut ckr).unwrap();
+                ckr.flush().unwrap();
+                let time = now.elapsed();
+                times.push(time);
+            }
+
+            let avg = times.iter().map(|time| time.as_micros()).sum::<u128>() / TEST_COUNT as u128;
+            println!("{} perf: {}", chunker_name, speed_str(&Duration::from_micros(avg.try_into().unwrap()), data_length));
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn file_draw_dedup_ratio() {
+        let path = std::path::Path::new("linux.tar");
         chunker_draw_sizes(path.to_str().unwrap());
     }
 
+    #[test]
+    #[ignore]
+    fn file_get_dedup_ratio() {
+        let path = std::path::Path::new("../rust-chunking/ubuntu.iso");
+        chunker_dedup_ratio(path.to_str().unwrap());
+    }
+
+    const ADJUSTMENT: usize = 256;
+
     fn chunker_draw_sizes(path: &str) {
-        use plotters::prelude::*;
+        let chunks = generate_chunks(path, Leap);
+        let mut chunk_map: HashMap<usize, u32> = HashMap::new();
+        for chunk in chunks {
+            chunk_map
+                .entry(chunk.len / ADJUSTMENT * ADJUSTMENT)
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
+        }
+
+        draw_distribution(chunk_map);
+    }
+
+    fn chunker_dedup_ratio(path: &str) {
+        for chunker in inner_chunkers() {
+            let chunks = generate_chunks(path, chunker);
+
+            let vec = std::fs::read(path).unwrap();
+
+            let chks_cnt = chunks.len();
+            let chks_map: HashMap<Hash, usize> = HashMap::from_iter(
+                chunks.into_iter().map(|Chunk { pos, len, .. }| {
+                    (Crypto::hash(&vec[pos..(pos + len)]), len)
+                }),
+            );
+
+            println!("{:?} chunks: {} / {} ({:.3})", chunker, chks_map.len(), chks_cnt, chks_map.len() as f64 / chks_cnt as f64);
+
+            let compressed_size = chks_map.iter().map(|(a, b)| b).sum::<usize>();
+            println!(
+                "{:?} bytes: {} / {} ({:.3})",
+                chunker,
+                compressed_size,
+                vec.len(),
+                compressed_size as f64 / vec.len() as f64
+            );
+            println!();
+        }
+    }
+
+    fn generate_chunks(path: &str, chunker: ChunkingAlgorithm) -> Vec<Chunk> {
         let vec = std::fs::read(path).unwrap();
 
         init_env();
@@ -322,23 +408,16 @@ mod tests {
 
         {
             let mut cur = Cursor::new(vec.clone());
-            let mut ckr = Chunker::new(
-                &mut sinker,
-                Arc::new(RwLock::new(LeapChunker::new())),
-            );
+            let mut ckr = Chunker::with_algorithm(&mut sinker, chunker);
             copy(&mut cur, &mut ckr).unwrap();
             ckr.flush().unwrap();
         }
 
-        const ADJUSTMENT: usize = 256;
+        sinker.chks
+    }
 
-        let mut chunks: HashMap<usize, u32> = HashMap::new();
-        for chunk in sinker.chks {
-            chunks
-                .entry(chunk.len / ADJUSTMENT * ADJUSTMENT)
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
-        }
+    fn draw_distribution(mut chunks: HashMap<usize, u32>) {
+        use plotters::prelude::*;
 
         let root_area =
             SVGBackend::new("chart.svg", (600, 400)).into_drawing_area();
@@ -364,6 +443,6 @@ mod tests {
             let bar = Rectangle::new([(x0, count), (x1, 0)], RED.filled());
             bar
         }))
-        .unwrap();
+            .unwrap();
     }
 }
